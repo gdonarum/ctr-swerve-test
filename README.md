@@ -2,6 +2,8 @@
 
 A faithful reference copy of what the **CTRE Phoenix Tuner X Swerve Project Generator** produces, adapted for our hardware on **SDS MK5n** modules. Use it to learn the layout and to start writing subsystems and autos before the motors arrive. When the real motors are on the bus, run the actual generator and let it overwrite `TunerConstants.java`.
 
+Driver controls are documented in [CONTROLS.md](CONTROLS.md).
+
 ## Our hardware to Phoenix mapping
 
 | Robot part | Our device | Phoenix class | Where it appears |
