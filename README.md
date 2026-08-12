@@ -54,6 +54,9 @@ so they share one numbering space (2, 3, 5, 6, 8, 9, 11, 12); the 4 CANcoders sh
 (4, 7, 10, 13); the Pigeon is its own class (1). When the real robot is built, run the Tuner X
 Swerve Project Generator and it will write your actual assigned IDs into `TunerConstants.java`.
 
+For hardware bring-up, print [docs/CAN_SETUP.md](docs/CAN_SETUP.md): a checklist with Tuner
+device names and check-off columns for assigning these IDs at the bench.
+
 ## File map
 
 ```
