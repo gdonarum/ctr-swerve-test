@@ -35,6 +35,25 @@ MK5n drive ratio options (swap the motor pinion only):
 
 The Tuner X "SDS MK5n" module preset fills these in for you once you pick R2 in the dropdown.
 
+## CAN bus device IDs
+
+All devices live on the CANivore bus named `canivore`. IDs are assigned in `TunerConstants.java`
+and must match what you set each physical device to in Phoenix Tuner X.
+
+| Module | Drive (Kraken X60) | Steer (Kraken X44) | CANcoder |
+|---|---|---|---|
+| Front Left | 2 | 3 | 4 |
+| Front Right | 5 | 6 | 7 |
+| Back Left | 8 | 9 | 10 |
+| Back Right | 11 | 12 | 13 |
+
+Pigeon 2.0 (IMU): **1**
+
+CAN IDs only need to be unique *within a device class* on a bus. All 8 motors are TalonFX
+so they share one numbering space (2, 3, 5, 6, 8, 9, 11, 12); the 4 CANcoders share another
+(4, 7, 10, 13); the Pigeon is its own class (1). When the real robot is built, run the Tuner X
+Swerve Project Generator and it will write your actual assigned IDs into `TunerConstants.java`.
+
 ## File map
 
 ```
