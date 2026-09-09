@@ -97,3 +97,34 @@ def log(config: Config, count: int = 10) -> str:
 def current_branch(config: Config) -> str:
     _require_repo(config)
     return _run(config, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
+
+
+def remote_url(config: Config, name: str = "origin") -> str:
+    """Return the URL of a git remote (default 'origin')."""
+    _require_repo(config)
+    return _run(config, ["remote", "get-url", name]).strip()
+
+
+def project_path_from_url(url: str) -> Optional[str]:
+    """Extract a 'group/subgroup/project' path from a git remote URL.
+
+    Handles the common GitLab/GitHub remote forms:
+      - https://host/group/project(.git)
+      - ssh://git@host:22/group/project(.git)
+      - git@host:group/project(.git)   (scp-like syntax)
+    Returns None if a path can't be determined.
+    """
+    url = (url or "").strip()
+    if not url:
+        return None
+    if url.endswith(".git"):
+        url = url[:-4]
+    # scp-like syntax: user@host:group/project (no scheme)
+    if "://" not in url and "@" in url and ":" in url:
+        after_at = url.split("@", 1)[1]
+        _, _, path = after_at.partition(":")
+        return path.strip("/") or None
+    from urllib.parse import urlparse
+
+    path = urlparse(url).path
+    return path.strip("/") or None

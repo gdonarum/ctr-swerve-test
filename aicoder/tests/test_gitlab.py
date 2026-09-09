@@ -38,8 +38,9 @@ def test_not_configured():
         gitlab.list_issues(cfg)
 
 
-def test_no_project():
-    cfg = Config(gitlab_url="https://gl.test", gitlab_token="t")
+def test_no_project(tmp_path):
+    # a non-git working directory so nothing can be derived from a remote
+    cfg = Config(gitlab_url="https://gl.test", gitlab_token="t", workdir=str(tmp_path))
     with pytest.raises(gitlab.GitLabError, match="No GitLab project"):
         gitlab.list_issues(cfg)
 
@@ -97,6 +98,33 @@ def test_explicit_project_overrides_default(patch_request, gitlab_config):
     calls = patch_request(FakeResponse(json_data=[]))
     gitlab.list_issues(gitlab_config, project="other/repo")
     assert "other%2Frepo" in calls[0]["url"]
+
+
+def test_project_derived_from_git_remote(patch_request, git_repo):
+    import subprocess
+    subprocess.run(
+        ["git", "remote", "add", "origin", "git@gitlab.test:grp/proj.git"],
+        cwd=git_repo.workdir, check=True, capture_output=True,
+    )
+    git_repo.gitlab_url = "https://gitlab.test"
+    git_repo.gitlab_token = "t"
+    # no GITLAB_PROJECT and no explicit project -> derived from the remote
+    calls = patch_request(FakeResponse(json_data=[]))
+    gitlab.list_issues(git_repo)
+    assert "grp%2Fproj" in calls[0]["url"]
+
+
+def test_explicit_project_beats_git_remote(patch_request, git_repo):
+    import subprocess
+    subprocess.run(
+        ["git", "remote", "add", "origin", "git@gitlab.test:grp/proj.git"],
+        cwd=git_repo.workdir, check=True, capture_output=True,
+    )
+    git_repo.gitlab_url = "https://gitlab.test"
+    git_repo.gitlab_token = "t"
+    calls = patch_request(FakeResponse(json_data=[]))
+    gitlab.list_issues(git_repo, project="explicit/one")
+    assert "explicit%2Fone" in calls[0]["url"]
 
 
 def test_format_helpers():

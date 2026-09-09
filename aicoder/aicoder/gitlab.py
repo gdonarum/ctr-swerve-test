@@ -15,7 +15,7 @@ from urllib.parse import quote
 
 import requests
 
-from aicoder import certs
+from aicoder import certs, gitops
 from aicoder.config import Config
 
 DEFAULT_TIMEOUT = 30
@@ -32,12 +32,21 @@ def _require_config(config: Config) -> None:
         )
 
 
+def _derive_project_from_git(config: Config) -> Optional[str]:
+    """Best-effort GitLab project path from the git 'origin' remote."""
+    try:
+        url = gitops.remote_url(config)
+    except gitops.GitError:
+        return None
+    return gitops.project_path_from_url(url)
+
+
 def _resolve_project(config: Config, project: Optional[str]) -> str:
-    project = project or config.gitlab_project
+    project = project or config.gitlab_project or _derive_project_from_git(config)
     if not project:
         raise GitLabError(
-            "No GitLab project given. Pass a project id or 'group/path', "
-            "or set GITLAB_PROJECT."
+            "No GitLab project given. Pass a project id or 'group/path', set "
+            "GITLAB_PROJECT, or run inside a git repo with a GitLab 'origin' remote."
         )
     return quote(str(project), safe="")
 

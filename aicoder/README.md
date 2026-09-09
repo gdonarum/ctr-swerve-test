@@ -83,6 +83,11 @@ export GITLAB_TOKEN="glpat-..."
 # export GITLAB_PROJECT="group/project" # optional default project
 ```
 
+The GitLab **project** is resolved in this order: the value you pass to a
+command/tool → `$GITLAB_PROJECT` → the git `origin` remote of the directory you
+run `dcs` in. So inside a checked-out GitLab repo, `/issues` and "are there open
+tickets for this project?" just work without configuring anything.
+
 `AICODER_*` and `OPENAI_*` are accepted as fallbacks for the LiteLLM base URL and
 key.
 

@@ -306,7 +306,11 @@ def _gitlab_create_mr(args: Dict[str, Any], config: Config) -> str:
 
 _PROJECT_PARAM = {
     "type": "string",
-    "description": "GitLab project id or 'group/path'. Falls back to $GITLAB_PROJECT.",
+    "description": (
+        "GitLab project id or 'group/path'. Optional — if omitted it falls back to "
+        "$GITLAB_PROJECT, then to the git 'origin' remote of the working directory. "
+        "Only ask the user for it if none of those resolve."
+    ),
 }
 
 TOOLS: List[Tool] = [

@@ -61,3 +61,32 @@ def test_diff(git_repo):
 def test_add_nothing(git_repo):
     with pytest.raises(gitops.GitError, match="No paths"):
         gitops.add(git_repo, [])
+
+
+import subprocess
+
+
+@pytest.mark.parametrize("url,expected", [
+    ("git@gitlab.example.com:group/project.git", "group/project"),
+    ("git@gitlab.example.com:group/sub/project.git", "group/sub/project"),
+    ("https://gitlab.example.com/group/project.git", "group/project"),
+    ("https://gitlab.example.com/group/sub/project", "group/sub/project"),
+    ("ssh://git@gitlab.example.com:22/group/project.git", "group/project"),
+    ("https://gitlab.example.com/group/project/", "group/project"),
+    ("", None),
+])
+def test_project_path_from_url(url, expected):
+    assert gitops.project_path_from_url(url) == expected
+
+
+def test_remote_url(git_repo):
+    subprocess.run(
+        ["git", "remote", "add", "origin", "git@gitlab.test:grp/proj.git"],
+        cwd=git_repo.workdir, check=True, capture_output=True,
+    )
+    assert gitops.remote_url(git_repo) == "git@gitlab.test:grp/proj.git"
+
+
+def test_remote_url_missing(git_repo):
+    with pytest.raises(gitops.GitError):
+        gitops.remote_url(git_repo)
