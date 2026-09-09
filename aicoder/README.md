@@ -150,7 +150,7 @@ dcs -c            # resume this directory's autosaved session
 | `/sessions` | List saved conversations. |
 | `/reset` | Clear the conversation history. |
 | `/help` | Show help. |
-| `/exit`, `/quit` | Leave. |
+| `/exit`, `/quit`, `exit` | Leave (Ctrl-D also works). |
 
 Creating issues and merge requests, staging specific files, running commands,
 and editing code are done by just asking (the assistant calls the matching tool

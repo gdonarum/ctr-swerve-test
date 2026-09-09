@@ -26,7 +26,7 @@ Commands:
   /resume <name>        resume a saved conversation
   /sessions             list saved conversations
   /reset                clear the conversation history
-  /exit, /quit          leave
+  /exit, /quit, exit    leave (Ctrl-D also works)
 
 Anything else is sent to the assistant. It can also edit files, run commands,
 use git, and manage GitLab issues and merge requests (with your confirmation).
@@ -376,6 +376,10 @@ def _repl(agent: Agent) -> int:
 
         if not message:
             continue
+        if message.lower() in ("exit", "quit"):
+            _autosave(agent)
+            ui.info("bye")
+            return 0
         if message.startswith("/"):
             keep_going = _handle_slash(agent, message)
             _autosave(agent)

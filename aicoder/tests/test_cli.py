@@ -204,6 +204,17 @@ def test_approver_always_is_sticky(monkeypatch):
     assert len(prompts) == 1
 
 
+def test_repl_bare_exit(tmp_path, monkeypatch):
+    from aicoder import ui
+    monkeypatch.setenv("AICODER_SESSIONS_DIR", str(tmp_path))
+    monkeypatch.setattr(ui, "banner", lambda *a, **k: None)
+    monkeypatch.setattr(ui, "info", lambda *a, **k: None)
+    for word in ("exit", "quit", "EXIT"):
+        monkeypatch.setattr(ui, "user_prompt", lambda w=word: w)
+        agent = make_agent(workdir=str(tmp_path))
+        assert cli._repl(agent) == 0
+
+
 def test_approver_always_is_per_tool(monkeypatch):
     from aicoder import tools, ui
     monkeypatch.setattr(ui, "diff_preview", lambda *a, **k: None)
