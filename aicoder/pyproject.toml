@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aicoder"
+name = "dcs-code-cli"
 version = "0.3.0"
-description = "A terminal AI coding assistant powered by a LiteLLM proxy, with git and GitLab integration."
+description = "DCS Code CLI — a terminal AI coding assistant powered by a LiteLLM proxy, with git and GitLab integration."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -23,6 +23,7 @@ dev = ["pytest>=7.0"]
 certs = ["truststore>=0.9"]
 
 [project.scripts]
+dcs = "aicoder.cli:main"
 aicoder = "aicoder.cli:main"
 
 [tool.setuptools.packages.find]

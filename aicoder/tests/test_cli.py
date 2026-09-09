@@ -131,3 +131,39 @@ def test_handle_slash_resume_missing(tmp_path, monkeypatch, capsys):
     agent = make_agent()
     cli._handle_slash(agent, "/resume ghost")
     assert "No saved session" in capsys.readouterr().err
+
+
+def test_parser_continue_and_no_autosave():
+    args = cli._build_parser().parse_args(["-c", "--no-autosave"])
+    assert args.continue_ is True
+    assert args.no_autosave is True
+
+
+def test_autosave_writes_and_resumes(tmp_path, monkeypatch):
+    from aicoder import session
+    monkeypatch.setenv("AICODER_SESSIONS_DIR", str(tmp_path))
+    agent = make_agent(workdir=str(tmp_path))
+    agent.messages.append({"role": "user", "content": "keep me"})
+    cli._autosave(agent)
+    assert session.has_autosave(str(tmp_path))
+
+    # /resume with no name restores this workdir's autosave
+    fresh = make_agent(workdir=str(tmp_path))
+    cli._handle_slash(fresh, "/resume")
+    assert fresh.messages[-1]["content"] == "keep me"
+
+
+def test_no_autosave_disables(tmp_path, monkeypatch):
+    from aicoder import session
+    monkeypatch.setenv("AICODER_SESSIONS_DIR", str(tmp_path))
+    agent = make_agent(workdir=str(tmp_path), autosave=False)
+    agent.messages.append({"role": "user", "content": "x"})
+    cli._autosave(agent)
+    assert session.has_autosave(str(tmp_path)) is False
+
+
+def test_splash_and_banner_do_not_crash():
+    # smoke test the branded splash/banner rendering
+    ui = __import__("aicoder.ui", fromlist=["ui"])
+    ui.splash()
+    ui.banner("m", "/w", hint="hi")

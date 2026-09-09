@@ -58,3 +58,29 @@ def test_load_rejects_payload_without_messages(sessions_tmp):
 def test_empty_name_rejected():
     with pytest.raises(session.SessionError):
         session.save([{"role": "user", "content": "x"}], "m", "/w", "!!!")
+
+
+# --- autosave ---------------------------------------------------------------
+
+
+def test_autosave_name_is_stable_and_workdir_specific():
+    assert session.autosave_name("/a") == session.autosave_name("/a")
+    assert session.autosave_name("/a") != session.autosave_name("/b")
+    assert session.autosave_name("/a").startswith("autosave-")
+
+
+def test_autosave_roundtrip(tmp_path):
+    workdir = str(tmp_path / "proj")
+    assert session.has_autosave(workdir) is False
+    msgs = [{"role": "system", "content": "s"}, {"role": "user", "content": "hi"}]
+    session.autosave(msgs, "m1", workdir)
+    assert session.has_autosave(workdir) is True
+    data = session.load_autosave(workdir)
+    assert data["messages"] == msgs
+    assert data["model"] == "m1"
+
+
+def test_autosave_never_raises(monkeypatch):
+    # even if save fails, autosave returns "" instead of raising
+    monkeypatch.setattr(session, "save", lambda *a, **k: (_ for _ in ()).throw(session.SessionError("x")))
+    assert session.autosave([], None, "/w") == ""

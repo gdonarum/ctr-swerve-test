@@ -26,6 +26,8 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - ✅ GitLab issues: list, get, create (on-prem, REST v4)
 - ✅ **GitLab merge requests: list, get, create**
 - ✅ **Persistent sessions**: `/save`, `/resume`, `/sessions`
+- ✅ **Autosave** per working directory; resume with `-c` / `/resume`
+- ✅ **Branding**: DCS Code CLI, ASCII splash, `dcs` command
 - ✅ **Corporate TLS / Zscaler**: CA bundle or OS trust store (`--ca-bundle`, `--system-certs`)
 - ✅ `/models` and `/model` to discover and switch models
 - ✅ `/commit`, `/issues`, `/issue`, `/mrs`, `/mr` slash commands
@@ -41,7 +43,6 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - ⬜ **`.aicoderignore`** and gitignore-aware search/traversal
 - ⬜ **Cost & usage reporting** per turn (tokens in/out, model)
 - ⬜ **Config file** (`~/.config/aicoder/config.toml`) in addition to env vars
-- ⬜ **Auto-save** the active session on exit; `/resume` the last one
 
 ## Later (v0.4+ — advanced agent features)
 

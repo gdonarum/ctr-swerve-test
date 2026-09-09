@@ -49,6 +49,9 @@ class Config:
     workdir: str = "."
     auto_approve: bool = False
 
+    # Autosave the conversation per working directory (resume with --continue).
+    autosave: bool = True
+
     # GitLab (on-prem). Project is supplied per call; this is an optional default.
     gitlab_url: Optional[str] = None
     gitlab_token: Optional[str] = None
@@ -77,6 +80,7 @@ class Config:
                 "AICODER_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "CURL_CA_BUNDLE"
             ),
             use_system_certs=_env_truthy("AICODER_SYSTEM_CERTS"),
+            autosave=not _env_truthy("AICODER_NO_AUTOSAVE"),
         )
         for key, value in overrides.items():
             if value is not None and hasattr(cfg, key):

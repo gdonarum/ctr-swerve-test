@@ -1,6 +1,7 @@
-# Setting up aicoder on Windows: WSL (Linux) and PowerShell
+# Setting up DCS Code CLI on Windows: WSL (Linux) and PowerShell
 
-aicoder is a Python CLI, so it runs anywhere Python 3.10+ does. On Windows you
+DCS Code CLI (command: `dcs`) is a Python CLI, so it runs anywhere Python 3.10+
+does. On Windows you
 have two good options:
 
 - **WSL (Ubuntu/Debian on Windows)** — recommended; you get a real Linux shell,
@@ -67,7 +68,7 @@ export GITLAB_PROJECT="my-group/my-project"     # optional default project
 
 ```bash
 cd /path/to/your/project     # the repo you want to work on
-aicoder
+dcs
 ```
 
 ### Notes for WSL
@@ -134,7 +135,7 @@ Close and reopen PowerShell after `setx` for the values to take effect.
 
 ```powershell
 cd C:\path\to\your\project
-aicoder
+dcs
 ```
 
 ### Notes for PowerShell
@@ -150,7 +151,7 @@ aicoder
 
 Zscaler (and similar corporate proxies) intercept HTTPS and re-sign it with a
 company root CA. Python doesn't trust that CA by default, so without setup you'll
-see errors like `CERTIFICATE_VERIFY_FAILED` when aicoder talks to LiteLLM or
+see errors like `CERTIFICATE_VERIFY_FAILED` when DCS Code CLI talks to LiteLLM or
 GitLab. Pick **one** of these.
 
 ### Option 1 — trust the OS certificate store (simplest)
@@ -161,13 +162,13 @@ trust store already. Let Python use it:
 ```bash
 pip install truststore
 export AICODER_SYSTEM_CERTS=1      # WSL/bash
-# or run:  aicoder --system-certs
+# or run:  dcs --system-certs
 ```
 
 ```powershell
 pip install truststore
 $env:AICODER_SYSTEM_CERTS = "1"    # PowerShell
-# or run:  aicoder --system-certs
+# or run:  dcs --system-certs
 ```
 
 This makes both the LiteLLM and GitLab connections trust whatever the OS trusts.
@@ -178,16 +179,16 @@ If you have (or can export) the Zscaler root certificate as a `.pem`:
 
 ```bash
 export AICODER_CA_BUNDLE=/etc/ssl/certs/zscaler-root.pem   # WSL/bash
-# or:  aicoder --ca-bundle /etc/ssl/certs/zscaler-root.pem
+# or:  dcs --ca-bundle /etc/ssl/certs/zscaler-root.pem
 ```
 
 ```powershell
 $env:AICODER_CA_BUNDLE = "C:\certs\zscaler-root.pem"       # PowerShell
-# or:  aicoder --ca-bundle C:\certs\zscaler-root.pem
+# or:  dcs --ca-bundle C:\certs\zscaler-root.pem
 ```
 
 `REQUESTS_CA_BUNDLE` and `SSL_CERT_FILE` are also honored as fallbacks, so if
-your shell already sets one of those for other corporate tools, aicoder picks it
+your shell already sets one of those for other corporate tools, DCS Code CLI picks it
 up automatically.
 
 ### How to get the Zscaler cert as a PEM
@@ -219,8 +220,8 @@ usually provide the `.pem` directly.
 ## Verifying your setup
 
 ```bash
-aicoder --version
-aicoder            # then type:  /models
+dcs --version
+dcs                # then type:  /models
 ```
 
 `/models` should print the models your LiteLLM proxy exposes. If it errors:

@@ -35,13 +35,21 @@ use git, and manage GitLab issues and merge requests (with your confirmation).
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="aicoder",
-        description="A terminal AI coding assistant powered by a LiteLLM proxy.",
+        prog="dcs",
+        description="DCS Code CLI — a terminal AI coding assistant powered by a LiteLLM proxy.",
     )
     parser.add_argument("prompt", nargs="*", help="A one-shot request. Omit for an interactive session.")
     parser.add_argument("--model", help="Model id to use (default: $LITELLM_MODEL, or first available).")
     parser.add_argument("--max-tokens", type=int, help="Max output tokens per response.")
     parser.add_argument("--workdir", help="Directory to operate in (default: current directory).")
+    parser.add_argument(
+        "-c", "--continue", dest="continue_", action="store_true",
+        help="Resume this directory's autosaved session on startup.",
+    )
+    parser.add_argument(
+        "--no-autosave", action="store_true",
+        help="Do not autosave the conversation for this directory.",
+    )
     parser.add_argument("--base-url", help="LiteLLM base URL (default: $LITELLM_BASE_URL).")
     parser.add_argument(
         "--ca-bundle",
@@ -56,7 +64,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "-y", "--yes", action="store_true",
         help="Auto-approve file writes, commands, commits, and issue/MR creation.",
     )
-    parser.add_argument("--version", action="version", version=f"aicoder {__version__}")
+    parser.add_argument("--version", action="version", version=f"DCS Code CLI {__version__}")
     return parser
 
 
@@ -250,20 +258,32 @@ def _cmd_save(agent: Agent, arg: str) -> None:
     ui.info(f"saved session {name!r}")
 
 
-def _cmd_resume(agent: Agent, arg: str) -> None:
-    name = arg.strip()
-    if not name:
-        ui.error("Usage: /resume <name> (see /sessions)")
-        return
-    try:
-        data = session.load(name)
-    except session.SessionError as exc:
-        ui.error(str(exc))
-        return
+def _apply_session(agent: Agent, data: dict, label: str) -> None:
     agent.messages = data["messages"]
     if data.get("model"):
         agent.config.model = data["model"]
-    ui.info(f"resumed session {name!r} ({len(agent.messages)} messages, model {agent.config.model})")
+    ui.info(f"resumed {label} ({len(agent.messages)} messages, model {agent.config.model})")
+
+
+def _cmd_resume(agent: Agent, arg: str) -> None:
+    name = arg.strip()
+    try:
+        if not name:
+            # no name: resume this directory's autosave
+            data = session.load_autosave(agent.config.workdir)
+            label = "autosaved session"
+        else:
+            data = session.load(name)
+            label = f"session {name!r}"
+    except session.SessionError as exc:
+        ui.error(str(exc))
+        return
+    _apply_session(agent, data, label)
+
+
+def _autosave(agent: Agent) -> None:
+    if agent.config.autosave and len(agent.messages) > 1:
+        session.autosave(agent.messages, agent.config.model, agent.config.workdir)
 
 
 def _cmd_sessions(agent: Agent) -> None:
@@ -316,20 +336,26 @@ def _handle_slash(agent: Agent, message: str) -> bool:
 
 
 def _repl(agent: Agent) -> int:
-    ui.banner(agent.config.model or "(unset)", os.path.abspath(agent.config.workdir))
+    hint = ""
+    if agent.config.autosave and session.has_autosave(agent.config.workdir):
+        hint = "An autosaved session exists here — /resume (or -c at startup) to continue."
+    ui.banner(agent.config.model or "(unset)", os.path.abspath(agent.config.workdir), hint)
     _resolve_model(agent)
     while True:
         try:
             message = ui.user_prompt().strip()
         except (EOFError, KeyboardInterrupt):
             ui.newline()
+            _autosave(agent)
             ui.info("bye")
             return 0
 
         if not message:
             continue
         if message.startswith("/"):
-            if not _handle_slash(agent, message):
+            keep_going = _handle_slash(agent, message)
+            _autosave(agent)
+            if not keep_going:
                 return 0
             continue
 
@@ -340,6 +366,8 @@ def _repl(agent: Agent) -> int:
         except KeyboardInterrupt:
             ui.newline()
             ui.info("[interrupted]")
+        finally:
+            _autosave(agent)
 
 
 def _one_shot(agent: Agent, prompt: str) -> int:
@@ -353,6 +381,8 @@ def _one_shot(agent: Agent, prompt: str) -> int:
     except KeyboardInterrupt:
         ui.newline()
         return 130
+    finally:
+        _autosave(agent)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -366,6 +396,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         auto_approve=args.yes,
         ca_bundle=args.ca_bundle,
         use_system_certs=True if args.system_certs else None,
+        autosave=False if args.no_autosave else None,
     )
 
     # Apply corporate TLS trust (e.g. Zscaler) up front so both the LLM and
@@ -395,6 +426,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     except Exception as exc:  # defensive
         ui.error(f"Failed to initialize: {exc}")
         return 2
+
+    if args.continue_:
+        try:
+            _apply_session(agent, session.load_autosave(config.workdir), "autosaved session")
+        except session.SessionError as exc:
+            ui.error(str(exc))
 
     if args.prompt:
         return _one_shot(agent, " ".join(args.prompt))

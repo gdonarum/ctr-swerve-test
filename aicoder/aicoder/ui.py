@@ -27,29 +27,48 @@ def _plain(*parts: str, err: bool = False) -> None:
     print("".join(parts), file=stream)
 
 
-def banner(model: str, workdir: str) -> None:
+APP_NAME = "DCS Code CLI"
+
+# ASCII "dcs", echoing the lowercase wordmark in the DCS Corp logo.
+_SPLASH_ART = r"""
+      _
+   __| | ___ ___
+  / _` |/ __/ __|
+ | (_| | (__\__ \
+  \__,_|\___|___/
+"""
+
+
+def splash() -> None:
+    """Print the DCS Code CLI splash screen."""
     if _console:
+        _console.print(Text(_SPLASH_ART.strip("\n"), style="bold cyan"))
         _console.print(
-            Panel.fit(
-                Text.assemble(
-                    ("aicoder", "bold cyan"),
-                    ("  your terminal coding assistant\n\n", "dim"),
-                    ("model: ", "dim"),
-                    (model, "green"),
-                    ("\nworkdir: ", "dim"),
-                    (workdir, "green"),
-                    ("\n\nType your request. ", ""),
-                    ("/exit", "yellow"),
-                    (" to quit, ", ""),
-                    ("/reset", "yellow"),
-                    (" to clear history.", ""),
-                ),
-                border_style="cyan",
-            )
+            Text.assemble((APP_NAME, "bold cyan"), ("  your terminal coding assistant", "dim"))
         )
     else:
-        _plain(f"aicoder — model={model} workdir={workdir}")
-        _plain("Type your request. /exit to quit, /reset to clear history.")
+        _plain(_SPLASH_ART.strip("\n"))
+        _plain(f"{APP_NAME} — your terminal coding assistant")
+
+
+def banner(model: str, workdir: str, hint: str = "") -> None:
+    splash()
+    if _console:
+        body = Text.assemble(
+            ("model: ", "dim"), (model, "green"),
+            ("\nworkdir: ", "dim"), (workdir, "green"),
+            ("\n\nType your request. ", ""),
+            ("/help", "yellow"), (" for commands, ", ""),
+            ("/exit", "yellow"), (" to quit.", ""),
+        )
+        if hint:
+            body.append("\n" + hint, style="magenta")
+        _console.print(Panel.fit(body, border_style="cyan"))
+    else:
+        _plain(f"model={model} workdir={workdir}")
+        _plain("Type your request. /help for commands, /exit to quit.")
+        if hint:
+            _plain(hint)
 
 
 def user_prompt() -> str:

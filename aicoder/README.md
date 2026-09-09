@@ -1,14 +1,26 @@
-# aicoder
+# DCS Code CLI
+
+```
+      _
+   __| | ___ ___
+  / _` |/ __/ __|
+ | (_| | (__\__ \
+  \__,_|\___|___/
+```
 
 A small, self-hostable **AI coding assistant for your terminal**. It talks to
 your own **LiteLLM** proxy (so you can use any model your org exposes, with your
 own per-user API key), reads and edits files in your project, runs commands,
-uses **git**, and works with issues on your **on-prem GitLab** — pausing to ask
-before it changes anything.
+uses **git**, and works with issues and merge requests on your **on-prem
+GitLab** — pausing to ask before it changes anything.
 
 It's intentionally small and readable, and it has an extensive test suite. See
 [`ROADMAP.md`](ROADMAP.md) for where it's headed (goal: match most of what
 Claude Code / OpenCode / Codex CLI do, on your own backend).
+
+> The command is `dcs` (with `aicoder` kept as an alias). The Python package is
+> `aicoder` and its env vars use the `LITELLM_*`, `GITLAB_*`, and `AICODER_*`
+> prefixes.
 
 ## Features
 
@@ -47,7 +59,7 @@ Windows users: see the step-by-step
 
 ## Configure
 
-aicoder reads configuration from the environment (copy `.env.example` to `.env`
+DCS Code CLI reads configuration from the environment (copy `.env.example` to `.env`
 as a reference):
 
 ```bash
@@ -89,7 +101,7 @@ Zscaler cert on Windows/WSL.
 Interactive session (run it from the project you want to work on):
 
 ```bash
-aicoder
+dcs
 ```
 
 ```
@@ -100,8 +112,9 @@ you › /commit "document build.gradle"
 One-shot:
 
 ```bash
-aicoder "write a failing test for parse(), then make it pass"
-aicoder --model gpt-4o "summarize the open GitLab issues in group/project"
+dcs "write a failing test for parse(), then make it pass"
+dcs --model gpt-4o "summarize the open GitLab issues in group/project"
+dcs -c            # resume this directory's autosaved session
 ```
 
 ### Slash commands
@@ -137,10 +150,18 @@ Saved sessions live under `~/.aicoder/sessions` (override with
 | `--base-url URL` | LiteLLM base URL (default: `$LITELLM_BASE_URL`). |
 | `--max-tokens N` | Max output tokens per response (default: 16000). |
 | `--workdir DIR` | Directory to operate in (default: current directory). |
+| `-c`, `--continue` | Resume this directory's autosaved session on startup. |
+| `--no-autosave` | Don't autosave the conversation for this directory. |
 | `--ca-bundle PATH` | CA bundle/cert for TLS (e.g. your Zscaler root). |
 | `--system-certs` | Trust the OS certificate store (needs `truststore`). |
 | `-y`, `--yes` | Auto-approve writes, commands, commits, and issue/MR creation. |
 | `--version` | Print version and exit. |
+
+### Autosave
+
+Your conversation is autosaved per working directory after every turn and on
+exit, so you can pick up where you left off with `dcs -c` (or `/resume` inside a
+session). Disable it with `--no-autosave` or `AICODER_NO_AUTOSAVE=1`.
 
 ## How it works
 
@@ -148,7 +169,7 @@ Saved sessions live under `~/.aicoder/sessions` (override with
 your prompt ──▶ model (LiteLLM chat completions, streaming)
                    │
                    ├─ text  ─────────────────▶ streamed to your terminal
-                   └─ tool_calls ──▶ aicoder runs each tool ──▶ results ──┐
+                   └─ tool_calls ──▶ dcs runs each tool ──▶ results ──────┐
                                      (mutating tools gated by y/N)        │
                    ◀──────────────── loop until the model is done ────────┘
 ```
@@ -163,7 +184,7 @@ tool is a handler plus one `Tool(...)` entry in `aicoder/tools.py`.
 
 ```
 aicoder/
-├── pyproject.toml            # packaging + `aicoder` console script + pytest config
+├── pyproject.toml            # packaging + `dcs`/`aicoder` console scripts + pytest config
 ├── requirements.txt
 ├── .env.example
 ├── README.md
@@ -197,7 +218,7 @@ offline.
 
 ## Safety notes
 
-aicoder can modify files, run arbitrary shell commands, commit code, and create
+DCS Code CLI can modify files, run arbitrary shell commands, commit code, and create
 GitLab issues. By default it asks before every such action. `--yes` disables
 those prompts — only use it when you trust the request and your work is committed.
 

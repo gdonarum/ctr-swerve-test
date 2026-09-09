@@ -10,6 +10,7 @@ Sessions live under ``AICODER_SESSIONS_DIR`` if set, otherwise
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -99,3 +100,30 @@ def delete(name: str) -> None:
     if not path.is_file():
         raise SessionError(f"No saved session named {name!r}.")
     path.unlink()
+
+
+# --- autosave ---------------------------------------------------------------
+#
+# Each working directory gets one autosave slot, keyed by a hash of its absolute
+# path so different projects don't clobber each other.
+
+
+def autosave_name(workdir: str) -> str:
+    digest = hashlib.sha1(os.path.abspath(workdir).encode("utf-8")).hexdigest()[:8]
+    return f"autosave-{digest}"
+
+
+def autosave(messages: List[Dict[str, Any]], model: Optional[str], workdir: str) -> str:
+    """Best-effort save to this workdir's autosave slot; never raises."""
+    try:
+        return save(messages, model, workdir, autosave_name(workdir))
+    except SessionError:
+        return ""
+
+
+def has_autosave(workdir: str) -> bool:
+    return _path(autosave_name(workdir)).is_file()
+
+
+def load_autosave(workdir: str) -> Dict[str, Any]:
+    return load(autosave_name(workdir))
