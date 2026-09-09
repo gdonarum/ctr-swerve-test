@@ -96,7 +96,10 @@ def test_truncation():
 def test_all_schemas_are_openai_function_shape():
     schemas = tool_schemas()
     names = {s["function"]["name"] for s in schemas}
-    assert {"read_file", "write_file", "git_commit", "gitlab_create_issue"} <= names
+    assert {
+        "read_file", "write_file", "git_commit",
+        "gitlab_create_issue", "gitlab_create_merge_request",
+    } <= names
     for s in schemas:
         assert s["type"] == "function"
         assert "parameters" in s["function"]

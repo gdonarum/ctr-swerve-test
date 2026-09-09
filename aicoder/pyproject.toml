@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aicoder"
-version = "0.2.0"
+version = "0.3.0"
 description = "A terminal AI coding assistant powered by a LiteLLM proxy, with git and GitLab integration."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,6 +19,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+# System certificate-store trust (e.g. for Zscaler), used by --system-certs.
+certs = ["truststore>=0.9"]
 
 [project.scripts]
 aicoder = "aicoder.cli:main"

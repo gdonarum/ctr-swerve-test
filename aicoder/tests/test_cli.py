@@ -91,3 +91,43 @@ def test_main_bad_workdir(monkeypatch):
     monkeypatch.setenv("LITELLM_BASE_URL", "https://x.test")
     monkeypatch.setenv("LITELLM_API_KEY", "sk-x")
     assert cli.main(["--workdir", "/definitely/not/here", "hi"]) == 2
+
+
+def test_parser_tls_flags():
+    args = cli._build_parser().parse_args(["--ca-bundle", "/x/ca.pem", "--system-certs"])
+    assert args.ca_bundle == "/x/ca.pem"
+    assert args.system_certs is True
+
+
+def test_handle_slash_mrs_without_gitlab(capsys):
+    agent = make_agent()
+    assert cli._handle_slash(agent, "/mrs") is True
+    assert "GitLab is not configured" in capsys.readouterr().err
+
+
+def test_handle_slash_save_resume_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.setenv("AICODER_SESSIONS_DIR", str(tmp_path))
+    agent = make_agent()
+    agent.messages.append({"role": "user", "content": "remember me"})
+    assert cli._handle_slash(agent, "/save mysess") is True
+
+    # change history, then resume should restore it
+    agent.messages.append({"role": "user", "content": "throwaway"})
+    assert cli._handle_slash(agent, "/resume mysess") is True
+    assert agent.messages[-1]["content"] == "remember me"
+
+
+def test_handle_slash_sessions_lists(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("AICODER_SESSIONS_DIR", str(tmp_path))
+    agent = make_agent()
+    cli._handle_slash(agent, "/save alpha")
+    capsys.readouterr()  # clear
+    cli._handle_slash(agent, "/sessions")
+    assert "alpha" in capsys.readouterr().out
+
+
+def test_handle_slash_resume_missing(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("AICODER_SESSIONS_DIR", str(tmp_path))
+    agent = make_agent()
+    cli._handle_slash(agent, "/resume ghost")
+    assert "No saved session" in capsys.readouterr().err

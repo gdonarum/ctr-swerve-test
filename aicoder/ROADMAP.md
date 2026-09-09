@@ -16,7 +16,7 @@ The guiding principles:
 
 Status legend: ✅ done · 🚧 in progress · ⬜ planned
 
-## Now (v0.2 — shipped)
+## Now (v0.3 — shipped)
 
 - ✅ Agentic tool-use loop over a LiteLLM (OpenAI-compatible) endpoint
 - ✅ Streaming responses
@@ -24,21 +24,24 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - ✅ Shell command execution with confirmation
 - ✅ Git tools: status, diff, log, add, commit
 - ✅ GitLab issues: list, get, create (on-prem, REST v4)
+- ✅ **GitLab merge requests: list, get, create**
+- ✅ **Persistent sessions**: `/save`, `/resume`, `/sessions`
+- ✅ **Corporate TLS / Zscaler**: CA bundle or OS trust store (`--ca-bundle`, `--system-certs`)
 - ✅ `/models` and `/model` to discover and switch models
-- ✅ `/commit`, `/issues`, `/issue` slash commands
+- ✅ `/commit`, `/issues`, `/issue`, `/mrs`, `/mr` slash commands
 - ✅ Interactive REPL and one-shot mode
 - ✅ Extensive pytest suite
 - ✅ WSL + PowerShell setup guide
 
-## Next (v0.3 — parity basics)
+## Next (v0.4 — parity basics)
 
-- ⬜ **Persistent sessions**: save/resume conversation history (`/save`, `/resume`)
 - ⬜ **Context management**: token accounting, auto-summarize/compact long histories
 - ⬜ **Better diffs**: unified-diff previews and a `apply_patch`-style multi-hunk edit tool
 - ⬜ **Project context file**: read an `AICODER.md` / `AGENTS.md` for repo conventions
 - ⬜ **`.aicoderignore`** and gitignore-aware search/traversal
 - ⬜ **Cost & usage reporting** per turn (tokens in/out, model)
 - ⬜ **Config file** (`~/.config/aicoder/config.toml`) in addition to env vars
+- ⬜ **Auto-save** the active session on exit; `/resume` the last one
 
 ## Later (v0.4+ — advanced agent features)
 
@@ -46,7 +49,7 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 - ⬜ **Sub-agents / task delegation** for large multi-step work
 - ⬜ **Planning mode** (propose a plan, get approval, then execute) à la Claude Code
 - ⬜ **MCP client support** to reuse the growing tool ecosystem
-- ⬜ **GitLab merge requests**: create/list/review MRs, not just issues
+- ✅ **GitLab merge requests**: create/list MRs (review/approve still planned)
 - ⬜ **Git branch/worktree helpers** for isolated changes
 - ⬜ **Inline citations** linking answers to `file:line`
 - ⬜ **Custom slash commands / prompt snippets** defined per project

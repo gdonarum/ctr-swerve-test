@@ -107,3 +107,77 @@ def test_format_helpers():
          "labels": ["a"], "web_url": "u", "description": "body"}
     )
     assert "Ann" in detail and "body" in detail
+
+
+# --- merge requests ---------------------------------------------------------
+
+
+def test_list_merge_requests(patch_request, gitlab_config):
+    calls = patch_request(FakeResponse(json_data=[
+        {"iid": 2, "state": "opened", "source_branch": "f", "target_branch": "main", "title": "MR"}
+    ]))
+    mrs = gitlab.list_merge_requests(gitlab_config)
+    assert mrs[0]["title"] == "MR"
+    assert "merge_requests" in calls[0]["url"]
+    assert calls[0]["params"]["state"] == "opened"
+
+
+def test_get_merge_request(patch_request, gitlab_config):
+    calls = patch_request(FakeResponse(json_data={"iid": 5, "title": "T"}))
+    mr = gitlab.get_merge_request(gitlab_config, 5)
+    assert mr["iid"] == 5
+    assert calls[0]["url"].endswith("/merge_requests/5")
+
+
+def test_create_merge_request(patch_request, gitlab_config):
+    calls = patch_request(FakeResponse(json_data={"iid": 3, "web_url": "https://gl.test/x/3"}))
+    mr = gitlab.create_merge_request(
+        gitlab_config, "feature", "main", "Add feature", description="d",
+        remove_source_branch=True, labels=["x"],
+    )
+    assert mr["iid"] == 3
+    assert calls[0]["method"] == "POST"
+    assert calls[0]["data"]["source_branch"] == "feature"
+    assert calls[0]["data"]["target_branch"] == "main"
+    assert calls[0]["data"]["remove_source_branch"] is True
+    assert calls[0]["data"]["labels"] == "x"
+
+
+def test_create_mr_requires_branches(gitlab_config, patch_request):
+    patch_request(FakeResponse(json_data={}))
+    with pytest.raises(gitlab.GitLabError, match="source_branch and target_branch"):
+        gitlab.create_merge_request(gitlab_config, "", "main", "T")
+
+
+def test_create_mr_requires_title(gitlab_config, patch_request):
+    patch_request(FakeResponse(json_data={}))
+    with pytest.raises(gitlab.GitLabError, match="title is required"):
+        gitlab.create_merge_request(gitlab_config, "f", "main", "  ")
+
+
+def test_mr_format_helpers():
+    short = gitlab.format_mr_short(
+        {"iid": 4, "state": "opened", "source_branch": "f", "target_branch": "main", "title": "Hi"}
+    )
+    assert short == "!4 [opened] f→main  Hi"
+    detail = gitlab.format_mr_detail(
+        {"iid": 4, "title": "Hi", "state": "opened", "source_branch": "f",
+         "target_branch": "main", "author": {"name": "Ann"}, "labels": [],
+         "web_url": "u", "description": "body"}
+    )
+    assert "f → main" in detail and "body" in detail
+
+
+def test_verify_passed_to_requests(monkeypatch, tmp_path):
+    from aicoder.config import Config
+    captured = {}
+
+    def fake(method, url, **kwargs):
+        captured.update(kwargs)
+        return FakeResponse(json_data=[])
+
+    monkeypatch.setattr(gitlab.requests, "request", fake)
+    cfg = Config(gitlab_url="https://gl.test", gitlab_token="t", gitlab_project="g/p",
+                 ca_bundle=str(tmp_path / "ca.pem"))
+    gitlab.list_issues(cfg)
+    assert captured["verify"] == str(tmp_path / "ca.pem")

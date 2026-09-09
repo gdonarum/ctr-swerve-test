@@ -11,6 +11,7 @@ from typing import List
 
 from openai import OpenAI
 
+from aicoder import certs
 from aicoder.config import Config
 
 
@@ -24,7 +25,29 @@ def make_client(config: Config) -> OpenAI:
         raise LLMError(
             "LiteLLM is not configured. Set LITELLM_BASE_URL and LITELLM_API_KEY."
         )
-    return OpenAI(base_url=config.base_url, api_key=config.api_key)
+    try:
+        certs.apply_system_certs(config)
+    except certs.CertError as exc:
+        raise LLMError(str(exc)) from exc
+
+    kwargs = {"base_url": config.base_url, "api_key": config.api_key}
+    if config.ca_bundle:
+        # DefaultHttpxClient wraps whichever httpx build this SDK uses, so a CA
+        # bundle (e.g. a Zscaler root) is honored across SDK versions. Pass an
+        # SSL context rather than a path string (accepted by both httpx builds).
+        from openai import DefaultHttpxClient
+
+        kwargs["http_client"] = DefaultHttpxClient(verify=_ssl_context(config.ca_bundle))
+    return OpenAI(**kwargs)
+
+
+def _ssl_context(ca_bundle: str):
+    import os
+    import ssl
+
+    if os.path.isdir(ca_bundle):
+        return ssl.create_default_context(capath=ca_bundle)
+    return ssl.create_default_context(cafile=ca_bundle)
 
 
 def list_models(client: OpenAI) -> List[str]:

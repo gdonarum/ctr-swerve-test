@@ -30,6 +30,10 @@ def _first_env(*names: str) -> Optional[str]:
     return None
 
 
+def _env_truthy(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass
 class Config:
     """Resolved configuration for a single aicoder run."""
@@ -50,6 +54,11 @@ class Config:
     gitlab_token: Optional[str] = None
     gitlab_project: Optional[str] = None
 
+    # TLS / corporate proxy (e.g. Zscaler). Either point at a CA bundle file, or
+    # use the operating system's trust store (where IT usually installs the cert).
+    ca_bundle: Optional[str] = None
+    use_system_certs: bool = False
+
     @classmethod
     def from_env(cls, **overrides) -> "Config":
         """Build a Config from the environment, applying explicit overrides.
@@ -64,6 +73,10 @@ class Config:
             gitlab_url=_first_env("GITLAB_URL"),
             gitlab_token=_first_env("GITLAB_TOKEN"),
             gitlab_project=_first_env("GITLAB_PROJECT"),
+            ca_bundle=_first_env(
+                "AICODER_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "CURL_CA_BUNDLE"
+            ),
+            use_system_certs=_env_truthy("AICODER_SYSTEM_CERTS"),
         )
         for key, value in overrides.items():
             if value is not None and hasattr(cfg, key):

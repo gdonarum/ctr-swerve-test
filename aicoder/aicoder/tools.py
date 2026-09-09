@@ -258,6 +258,50 @@ def _gitlab_create_issue(args: Dict[str, Any], config: Config) -> str:
     return f"Created issue #{issue.get('iid')}: {issue.get('web_url', '')}"
 
 
+def _gitlab_list_mrs(args: Dict[str, Any], config: Config) -> str:
+    try:
+        mrs = gitlab.list_merge_requests(
+            config,
+            project=args.get("project"),
+            state=args.get("state", "opened"),
+            search=args.get("search"),
+            limit=int(args.get("limit", 20)),
+        )
+    except gitlab.GitLabError as exc:
+        raise ToolError(str(exc))
+    if not mrs:
+        return "(no matching merge requests)"
+    return "\n".join(gitlab.format_mr_short(m) for m in mrs)
+
+
+def _gitlab_get_mr(args: Dict[str, Any], config: Config) -> str:
+    try:
+        mr = gitlab.get_merge_request(config, int(args["mr_iid"]), project=args.get("project"))
+    except gitlab.GitLabError as exc:
+        raise ToolError(str(exc))
+    return gitlab.format_mr_detail(mr)
+
+
+def _gitlab_create_mr(args: Dict[str, Any], config: Config) -> str:
+    labels = args.get("labels")
+    if isinstance(labels, str):
+        labels = [s.strip() for s in labels.split(",") if s.strip()]
+    try:
+        mr = gitlab.create_merge_request(
+            config,
+            source_branch=args["source_branch"],
+            target_branch=args["target_branch"],
+            title=args["title"],
+            description=args.get("description", ""),
+            project=args.get("project"),
+            remove_source_branch=bool(args.get("remove_source_branch", False)),
+            labels=labels,
+        )
+    except gitlab.GitLabError as exc:
+        raise ToolError(str(exc))
+    return f"Created merge request !{mr.get('iid')}: {mr.get('web_url', '')}"
+
+
 # --- Registry ---------------------------------------------------------------
 
 _PROJECT_PARAM = {
@@ -460,6 +504,66 @@ TOOLS: List[Tool] = [
         handler=_gitlab_create_issue,
         mutating=True,
     ),
+    Tool(
+        name="gitlab_list_merge_requests",
+        description="List merge requests in a GitLab project.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "project": _PROJECT_PARAM,
+                "state": {
+                    "type": "string",
+                    "enum": ["opened", "closed", "merged", "all"],
+                    "description": "Default opened.",
+                },
+                "search": {"type": "string", "description": "Filter by text."},
+                "limit": {"type": "integer", "description": "Max to return (default 20)."},
+            },
+        },
+        handler=_gitlab_list_mrs,
+    ),
+    Tool(
+        name="gitlab_get_merge_request",
+        description="Get the details of one GitLab merge request by its project-scoped iid.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "mr_iid": {"type": "integer", "description": "The merge request's iid."},
+                "project": _PROJECT_PARAM,
+            },
+            "required": ["mr_iid"],
+        },
+        handler=_gitlab_get_mr,
+    ),
+    Tool(
+        name="gitlab_create_merge_request",
+        description=(
+            "Open a new merge request from a source branch into a target branch "
+            "in a GitLab project."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "source_branch": {"type": "string", "description": "Branch with the changes."},
+                "target_branch": {"type": "string", "description": "Branch to merge into (e.g. main)."},
+                "title": {"type": "string", "description": "Merge request title."},
+                "description": {"type": "string", "description": "Description (Markdown)."},
+                "project": _PROJECT_PARAM,
+                "remove_source_branch": {
+                    "type": "boolean",
+                    "description": "Delete the source branch after merge.",
+                },
+                "labels": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional labels.",
+                },
+            },
+            "required": ["source_branch", "target_branch", "title"],
+        },
+        handler=_gitlab_create_mr,
+        mutating=True,
+    ),
 ]
 
 _BY_NAME: Dict[str, Tool] = {t.name: t for t in TOOLS}
@@ -489,6 +593,12 @@ def describe_call(name: str, args: Dict[str, Any]) -> str:
         return "gitlab: list issues"
     if name == "gitlab_get_issue":
         return f"gitlab: get issue #{args.get('issue_iid', '?')}"
+    if name == "gitlab_create_merge_request":
+        return f"gitlab: create MR {args.get('source_branch', '?')}→{args.get('target_branch', '?')}"
+    if name == "gitlab_list_merge_requests":
+        return "gitlab: list merge requests"
+    if name == "gitlab_get_merge_request":
+        return f"gitlab: get MR !{args.get('mr_iid', '?')}"
     if name in ("read_file", "write_file", "str_replace"):
         return f"{name} {args.get('path', '')}"
     if name == "list_directory":

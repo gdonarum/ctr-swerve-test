@@ -15,6 +15,7 @@ from urllib.parse import quote
 
 import requests
 
+from aicoder import certs
 from aicoder.config import Config
 
 DEFAULT_TIMEOUT = 30
@@ -52,9 +53,17 @@ def _headers(config: Config) -> Dict[str, str]:
 def _request(config: Config, method: str, path: str, **kwargs) -> Any:
     url = f"{_base(config)}{path}"
     try:
+        certs.apply_system_certs(config)
         resp = requests.request(
-            method, url, headers=_headers(config), timeout=DEFAULT_TIMEOUT, **kwargs
+            method,
+            url,
+            headers=_headers(config),
+            timeout=DEFAULT_TIMEOUT,
+            verify=certs.requests_verify(config),
+            **kwargs,
         )
+    except certs.CertError as exc:
+        raise GitLabError(str(exc)) from exc
     except requests.RequestException as exc:
         raise GitLabError(f"Network error contacting GitLab: {exc}") from exc
     if resp.status_code == 401:
@@ -131,5 +140,88 @@ def format_issue_detail(issue: Dict[str, Any]) -> str:
         f"url:     {issue.get('web_url', '')}",
         "",
         (issue.get("description") or "(no description)"),
+    ]
+    return "\n".join(lines)
+
+
+# --- Merge requests ---------------------------------------------------------
+
+
+def list_merge_requests(
+    config: Config,
+    project: Optional[str] = None,
+    state: str = "opened",
+    search: Optional[str] = None,
+    limit: int = 20,
+) -> List[Dict[str, Any]]:
+    """List merge requests. ``state`` is opened|closed|merged|all."""
+    _require_config(config)
+    pid = _resolve_project(config, project)
+    params: Dict[str, Any] = {"per_page": max(1, min(limit, 100))}
+    if state and state != "all":
+        params["state"] = state
+    if search:
+        params["search"] = search
+    data = _request(config, "GET", f"/projects/{pid}/merge_requests", params=params)
+    return data if isinstance(data, list) else []
+
+
+def get_merge_request(config: Config, mr_iid: int, project: Optional[str] = None) -> Dict[str, Any]:
+    """Fetch a single merge request by its project-scoped internal id (iid)."""
+    _require_config(config)
+    pid = _resolve_project(config, project)
+    return _request(config, "GET", f"/projects/{pid}/merge_requests/{int(mr_iid)}")
+
+
+def create_merge_request(
+    config: Config,
+    source_branch: str,
+    target_branch: str,
+    title: str,
+    description: str = "",
+    project: Optional[str] = None,
+    remove_source_branch: bool = False,
+    labels: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Open a new merge request and return the created object."""
+    _require_config(config)
+    if not source_branch or not target_branch:
+        raise GitLabError("Both source_branch and target_branch are required.")
+    if not title.strip():
+        raise GitLabError("A merge request title is required.")
+    pid = _resolve_project(config, project)
+    payload: Dict[str, Any] = {
+        "source_branch": source_branch,
+        "target_branch": target_branch,
+        "title": title,
+        "description": description,
+        "remove_source_branch": remove_source_branch,
+    }
+    if labels:
+        payload["labels"] = ",".join(labels)
+    return _request(config, "POST", f"/projects/{pid}/merge_requests", data=payload)
+
+
+def format_mr_short(mr: Dict[str, Any]) -> str:
+    """One-line summary of a merge request for lists."""
+    iid = mr.get("iid", "?")
+    state = mr.get("state", "?")
+    src = mr.get("source_branch", "?")
+    tgt = mr.get("target_branch", "?")
+    title = mr.get("title", "")
+    return f"!{iid} [{state}] {src}→{tgt}  {title}"
+
+
+def format_mr_detail(mr: Dict[str, Any]) -> str:
+    """Multi-line detail view of a single merge request."""
+    lines = [
+        f"!{mr.get('iid', '?')}: {mr.get('title', '')}",
+        f"state:   {mr.get('state', '?')}",
+        f"branch:  {mr.get('source_branch', '?')} → {mr.get('target_branch', '?')}",
+        f"author:  {(mr.get('author') or {}).get('name', '?')}",
+        f"labels:  {', '.join(mr.get('labels') or []) or '(none)'}",
+        f"url:     {mr.get('web_url', '')}",
+        "",
+        (mr.get("description") or "(no description)"),
     ]
     return "\n".join(lines)

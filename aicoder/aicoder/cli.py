@@ -8,7 +8,7 @@ import os
 import sys
 from typing import Any, Dict, List, Optional
 
-from aicoder import __version__, gitlab, gitops, llm, ui
+from aicoder import __version__, certs, gitlab, gitops, llm, session, ui
 from aicoder.agent import Agent, AgentError
 from aicoder.config import Config
 
@@ -20,11 +20,16 @@ Commands:
   /commit <message>     commit tracked changes with a message
   /issues [project]     list open GitLab issues
   /issue <iid> [proj]   show one GitLab issue
+  /mrs [project]        list open GitLab merge requests
+  /mr <iid> [project]   show one GitLab merge request
+  /save [name]          save the current conversation
+  /resume <name>        resume a saved conversation
+  /sessions             list saved conversations
   /reset                clear the conversation history
   /exit, /quit          leave
 
 Anything else is sent to the assistant. It can also edit files, run commands,
-use git, and create GitLab issues on your behalf (with your confirmation).
+use git, and manage GitLab issues and merge requests (with your confirmation).
 """
 
 
@@ -39,8 +44,17 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workdir", help="Directory to operate in (default: current directory).")
     parser.add_argument("--base-url", help="LiteLLM base URL (default: $LITELLM_BASE_URL).")
     parser.add_argument(
+        "--ca-bundle",
+        help="Path to a CA bundle/cert (e.g. your Zscaler root) for TLS verification.",
+    )
+    parser.add_argument(
+        "--system-certs",
+        action="store_true",
+        help="Trust the OS certificate store (needs 'truststore'; good for Zscaler).",
+    )
+    parser.add_argument(
         "-y", "--yes", action="store_true",
-        help="Auto-approve file writes, commands, commits, and issue creation.",
+        help="Auto-approve file writes, commands, commits, and issue/MR creation.",
     )
     parser.add_argument("--version", action="version", version=f"aicoder {__version__}")
     return parser
@@ -73,6 +87,13 @@ def _make_approver(config: Config):
             body = f"title: {args.get('title', '')}\n\n{args.get('description', '')}"
             ui.diff_preview("gitlab: create issue", body, "markdown")
             return ui.confirm("Create this issue?")
+        if tool.name == "gitlab_create_merge_request":
+            body = (
+                f"{args.get('source_branch', '')} → {args.get('target_branch', '')}\n"
+                f"title: {args.get('title', '')}\n\n{args.get('description', '')}"
+            )
+            ui.diff_preview("gitlab: create merge request", body, "markdown")
+            return ui.confirm("Create this merge request?")
         return ui.confirm(f"Run {tool.name}?")
 
     return approver
@@ -185,6 +206,75 @@ def _cmd_issue(agent: Agent, arg: str) -> None:
     ui.info(gitlab.format_issue_detail(issue))
 
 
+def _cmd_mrs(agent: Agent, arg: str) -> None:
+    project = arg.strip() or None
+    try:
+        mrs = gitlab.list_merge_requests(agent.config, project=project)
+    except gitlab.GitLabError as exc:
+        ui.error(str(exc))
+        return
+    if not mrs:
+        ui.info("(no open merge requests)")
+        return
+    for mr in mrs:
+        ui.info(gitlab.format_mr_short(mr))
+
+
+def _cmd_mr(agent: Agent, arg: str) -> None:
+    parts = arg.split()
+    if not parts:
+        ui.error("Usage: /mr <iid> [project]")
+        return
+    try:
+        iid = int(parts[0])
+    except ValueError:
+        ui.error("The merge request id must be a number.")
+        return
+    project = parts[1] if len(parts) > 1 else None
+    try:
+        mr = gitlab.get_merge_request(agent.config, iid, project=project)
+    except gitlab.GitLabError as exc:
+        ui.error(str(exc))
+        return
+    ui.info(gitlab.format_mr_detail(mr))
+
+
+def _cmd_save(agent: Agent, arg: str) -> None:
+    try:
+        name = session.save(
+            agent.messages, agent.config.model, agent.config.workdir, arg.strip() or None
+        )
+    except session.SessionError as exc:
+        ui.error(str(exc))
+        return
+    ui.info(f"saved session {name!r}")
+
+
+def _cmd_resume(agent: Agent, arg: str) -> None:
+    name = arg.strip()
+    if not name:
+        ui.error("Usage: /resume <name> (see /sessions)")
+        return
+    try:
+        data = session.load(name)
+    except session.SessionError as exc:
+        ui.error(str(exc))
+        return
+    agent.messages = data["messages"]
+    if data.get("model"):
+        agent.config.model = data["model"]
+    ui.info(f"resumed session {name!r} ({len(agent.messages)} messages, model {agent.config.model})")
+
+
+def _cmd_sessions(agent: Agent) -> None:
+    names = session.list_sessions()
+    if not names:
+        ui.info("(no saved sessions)")
+        return
+    for name in names:
+        ui.info(name)
+
+
 def _handle_slash(agent: Agent, message: str) -> bool:
     """Handle a /command. Returns True if the REPL should keep running,
     False if it should exit."""
@@ -207,6 +297,16 @@ def _handle_slash(agent: Agent, message: str) -> bool:
         _cmd_issues(agent, arg)
     elif command == "/issue":
         _cmd_issue(agent, arg)
+    elif command == "/mrs":
+        _cmd_mrs(agent, arg)
+    elif command == "/mr":
+        _cmd_mr(agent, arg)
+    elif command == "/save":
+        _cmd_save(agent, arg)
+    elif command == "/resume":
+        _cmd_resume(agent, arg)
+    elif command == "/sessions":
+        _cmd_sessions(agent)
     else:
         ui.error(f"Unknown command {command!r}. Try /help.")
     return True
@@ -264,7 +364,17 @@ def main(argv: Optional[List[str]] = None) -> int:
         workdir=args.workdir,
         base_url=args.base_url,
         auto_approve=args.yes,
+        ca_bundle=args.ca_bundle,
+        use_system_certs=True if args.system_certs else None,
     )
+
+    # Apply corporate TLS trust (e.g. Zscaler) up front so both the LLM and
+    # GitLab clients pick it up. A CA bundle is picked up per-request/client.
+    try:
+        certs.apply_system_certs(config)
+    except certs.CertError as exc:
+        ui.error(str(exc))
+        return 2
 
     if not config.has_llm_credentials():
         ui.error(

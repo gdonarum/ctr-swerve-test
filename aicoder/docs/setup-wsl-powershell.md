@@ -146,6 +146,76 @@ aicoder
 
 ---
 
+## Behind Zscaler
+
+Zscaler (and similar corporate proxies) intercept HTTPS and re-sign it with a
+company root CA. Python doesn't trust that CA by default, so without setup you'll
+see errors like `CERTIFICATE_VERIFY_FAILED` when aicoder talks to LiteLLM or
+GitLab. Pick **one** of these.
+
+### Option 1 — trust the OS certificate store (simplest)
+
+Your IT department almost always installs the Zscaler cert into the machine's
+trust store already. Let Python use it:
+
+```bash
+pip install truststore
+export AICODER_SYSTEM_CERTS=1      # WSL/bash
+# or run:  aicoder --system-certs
+```
+
+```powershell
+pip install truststore
+$env:AICODER_SYSTEM_CERTS = "1"    # PowerShell
+# or run:  aicoder --system-certs
+```
+
+This makes both the LiteLLM and GitLab connections trust whatever the OS trusts.
+
+### Option 2 — point at a CA bundle (PEM) file
+
+If you have (or can export) the Zscaler root certificate as a `.pem`:
+
+```bash
+export AICODER_CA_BUNDLE=/etc/ssl/certs/zscaler-root.pem   # WSL/bash
+# or:  aicoder --ca-bundle /etc/ssl/certs/zscaler-root.pem
+```
+
+```powershell
+$env:AICODER_CA_BUNDLE = "C:\certs\zscaler-root.pem"       # PowerShell
+# or:  aicoder --ca-bundle C:\certs\zscaler-root.pem
+```
+
+`REQUESTS_CA_BUNDLE` and `SSL_CERT_FILE` are also honored as fallbacks, so if
+your shell already sets one of those for other corporate tools, aicoder picks it
+up automatically.
+
+### How to get the Zscaler cert as a PEM
+
+**Windows (PowerShell):** export it from the Windows certificate store —
+
+```powershell
+# Find the Zscaler root, then export it (adjust the subject match as needed)
+$cert = Get-ChildItem Cert:\LocalMachine\Root |
+        Where-Object { $_.Subject -like "*Zscaler*" } | Select-Object -First 1
+Export-Certificate -Cert $cert -FilePath "$HOME\zscaler-root.cer" -Type CERT
+# Convert DER (.cer) to PEM (needs openssl, or Git Bash):
+openssl x509 -inform der -in "$HOME\zscaler-root.cer" -out "$HOME\zscaler-root.pem"
+```
+
+**WSL:** if the cert is installed system-wide in Ubuntu, it's already under
+`/etc/ssl/certs/` and Option 1 covers it. To add a PEM yourself:
+
+```bash
+sudo cp zscaler-root.pem /usr/local/share/ca-certificates/zscaler-root.crt
+sudo update-ca-certificates
+```
+
+Ask your IT/security team if you're not sure where the certificate lives — they
+usually provide the `.pem` directly.
+
+---
+
 ## Verifying your setup
 
 ```bash

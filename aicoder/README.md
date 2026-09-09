@@ -20,10 +20,12 @@ Claude Code / OpenCode / Codex CLI do, on your own backend).
   exact-match edits.
 - **Shell** — run builds, tests, and linters (with confirmation).
 - **Git** — status, diff, log, add, commit (as tools and via `/commit`).
-- **GitLab** — list, view, and create issues/tickets (on-prem REST v4), as tools
-  and via `/issues` and `/issue`.
-- **Human in the loop** — every file write, command, commit, and issue creation
-  is previewed and confirmed (bypass with `--yes`).
+- **GitLab** — list, view, and create **issues** and **merge requests** (on-prem
+  REST v4), as tools and via `/issues`, `/issue`, `/mrs`, `/mr`.
+- **Sessions** — save and resume conversations (`/save`, `/resume`, `/sessions`).
+- **Corporate TLS / Zscaler** — trust a CA bundle or the OS certificate store.
+- **Human in the loop** — every file write, command, commit, and issue/MR
+  creation is previewed and confirmed (bypass with `--yes`).
 - **Interactive or one-shot** — a REPL, or a single request as an argument.
 
 ## Requirements
@@ -54,7 +56,7 @@ export LITELLM_BASE_URL="https://litellm.example.com"
 export LITELLM_API_KEY="sk-..."
 # export LITELLM_MODEL="gpt-4o"        # optional default model
 
-# GitLab (optional — only for issue commands/tools)
+# GitLab (optional — for issue/MR commands and tools)
 export GITLAB_URL="https://gitlab.example.com"
 export GITLAB_TOKEN="glpat-..."
 # export GITLAB_PROJECT="group/project" # optional default project
@@ -62,6 +64,25 @@ export GITLAB_TOKEN="glpat-..."
 
 `AICODER_*` and `OPENAI_*` are accepted as fallbacks for the LiteLLM base URL and
 key.
+
+### Behind Zscaler (or another TLS-inspecting proxy)
+
+Zscaler re-signs HTTPS with a corporate root CA that Python doesn't trust by
+default, which otherwise causes certificate errors. Pick one:
+
+```bash
+# 1) Point at the CA bundle / root cert (PEM). REQUESTS_CA_BUNDLE / SSL_CERT_FILE
+#    are honored as fallbacks; --ca-bundle overrides.
+export AICODER_CA_BUNDLE=/etc/ssl/certs/zscaler-root.pem
+
+# 2) Or trust the OS certificate store (where IT usually installs the cert):
+pip install truststore
+export AICODER_SYSTEM_CERTS=1     # or run with --system-certs
+```
+
+This applies to both the LiteLLM (LLM) and GitLab connections. See the
+[setup guide](docs/setup-wsl-powershell.md#behind-zscaler) for how to export the
+Zscaler cert on Windows/WSL.
 
 ## Usage
 
@@ -92,13 +113,21 @@ aicoder --model gpt-4o "summarize the open GitLab issues in group/project"
 | `/commit <message>` | Commit tracked changes. |
 | `/issues [project]` | List open GitLab issues. |
 | `/issue <iid> [project]` | Show one GitLab issue. |
+| `/mrs [project]` | List open GitLab merge requests. |
+| `/mr <iid> [project]` | Show one GitLab merge request. |
+| `/save [name]` | Save the current conversation. |
+| `/resume <name>` | Resume a saved conversation. |
+| `/sessions` | List saved conversations. |
 | `/reset` | Clear the conversation history. |
 | `/help` | Show help. |
 | `/exit`, `/quit` | Leave. |
 
-Creating issues, staging specific files, running commands, and editing code are
-done by just asking (the assistant calls the matching tool and asks you to
-confirm).
+Creating issues and merge requests, staging specific files, running commands,
+and editing code are done by just asking (the assistant calls the matching tool
+and asks you to confirm).
+
+Saved sessions live under `~/.aicoder/sessions` (override with
+`AICODER_SESSIONS_DIR`).
 
 ### Options
 
@@ -108,7 +137,9 @@ confirm).
 | `--base-url URL` | LiteLLM base URL (default: `$LITELLM_BASE_URL`). |
 | `--max-tokens N` | Max output tokens per response (default: 16000). |
 | `--workdir DIR` | Directory to operate in (default: current directory). |
-| `-y`, `--yes` | Auto-approve writes, commands, commits, and issue creation. |
+| `--ca-bundle PATH` | CA bundle/cert for TLS (e.g. your Zscaler root). |
+| `--system-certs` | Trust the OS certificate store (needs `truststore`). |
+| `-y`, `--yes` | Auto-approve writes, commands, commits, and issue/MR creation. |
 | `--version` | Print version and exit. |
 
 ## How it works
@@ -124,8 +155,9 @@ your prompt ──▶ model (LiteLLM chat completions, streaming)
 
 Tools: filesystem (`read_file`, `write_file`, `str_replace`, `list_directory`,
 `search`), shell (`run_command`), git (`git_status/diff/log/add/commit`), and
-GitLab (`gitlab_list_issues/get_issue/create_issue`). Adding a tool is a handler
-plus one `Tool(...)` entry in `aicoder/tools.py`.
+GitLab (`gitlab_list_issues/get_issue/create_issue`,
+`gitlab_list_merge_requests/get_merge_request/create_merge_request`). Adding a
+tool is a handler plus one `Tool(...)` entry in `aicoder/tools.py`.
 
 ## Project layout
 
@@ -146,7 +178,9 @@ aicoder/
 │   ├── agent.py              # streaming agentic loop
 │   ├── tools.py              # tool registry + handlers
 │   ├── gitops.py             # local git wrappers
-│   ├── gitlab.py             # on-prem GitLab REST v4 client
+│   ├── gitlab.py             # on-prem GitLab REST v4 client (issues + MRs)
+│   ├── session.py            # save/resume conversations
+│   ├── certs.py              # corporate TLS (Zscaler) trust configuration
 │   └── ui.py                 # terminal presentation (rich, with a plain fallback)
 └── tests/                    # pytest suite (no network required)
 ```
