@@ -48,11 +48,20 @@ Claude Code / OpenCode / Codex CLI do, on your own backend).
 
 ## Install
 
+Install it into a Python virtual environment (recommended — keeps its
+dependencies isolated from your system Python):
+
 ```bash
 cd aicoder
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv          # create the venv (once)
+source .venv/bin/activate     # activate it  (Windows: .\.venv\Scripts\Activate.ps1)
 pip install -e .
 ```
+
+The `dcs` command is available **whenever that virtualenv is active**, so
+re-activate it in each new shell before running `dcs` (`source .venv/bin/activate`).
+Prefer a globally-available command instead? Install with
+[pipx](https://pipx.pypa.io/): `pipx install .` from this directory.
 
 Windows users: see the step-by-step
 **[WSL + PowerShell setup guide](docs/setup-wsl-powershell.md)**.
@@ -98,7 +107,8 @@ Zscaler cert on Windows/WSL.
 
 ## Usage
 
-Interactive session (run it from the project you want to work on):
+Running `dcs` with no arguments starts an **interactive chat session** (the
+default) — run it from the project you want to work on:
 
 ```bash
 dcs
@@ -109,7 +119,7 @@ you › explain what build.gradle does, then add a comment header to it
 you › /commit "document build.gradle"
 ```
 
-One-shot:
+One-shot (pass a prompt as an argument to run a single request and exit):
 
 ```bash
 dcs "write a failing test for parse(), then make it pass"
