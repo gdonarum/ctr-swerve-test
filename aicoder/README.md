@@ -1,27 +1,38 @@
 # aicoder
 
-A small AI coding assistant that lives in your terminal, powered by the
-[Claude API](https://docs.anthropic.com/). Ask it to explain code, make
-changes, write new files, or run your tests — it reads and edits files in your
-project and runs commands, pausing to ask before it changes anything.
+A small, self-hostable **AI coding assistant for your terminal**. It talks to
+your own **LiteLLM** proxy (so you can use any model your org exposes, with your
+own per-user API key), reads and edits files in your project, runs commands,
+uses **git**, and works with issues on your **on-prem GitLab** — pausing to ask
+before it changes anything.
 
-It's intentionally tiny and readable (a few hundred lines), so it's easy to
-understand, fork, and extend.
+It's intentionally small and readable, and it has an extensive test suite. See
+[`ROADMAP.md`](ROADMAP.md) for where it's headed (goal: match most of what
+Claude Code / OpenCode / Codex CLI do, on your own backend).
 
 ## Features
 
-- **Agentic loop** — Claude decides which tools to call and iterates until the
-  task is done.
-- **Real tools** — read files, list directories, literal-substring search,
-  create/overwrite files, exact-match edits, and run shell commands.
-- **Human in the loop** — every file write and shell command is previewed and
-  requires your confirmation (unless you pass `--yes`).
-- **Streaming** — responses appear token-by-token.
-- **Interactive or one-shot** — start a REPL, or pass a request as an argument.
+- **Agentic loop** — the model decides which tools to call and iterates until the
+  task is done, streaming output token-by-token.
+- **LiteLLM backend** — OpenAI-compatible; `/models` lists what's available and
+  `/model` switches the active one.
+- **File tools** — read, list, literal-substring search, create/overwrite, and
+  exact-match edits.
+- **Shell** — run builds, tests, and linters (with confirmation).
+- **Git** — status, diff, log, add, commit (as tools and via `/commit`).
+- **GitLab** — list, view, and create issues/tickets (on-prem REST v4), as tools
+  and via `/issues` and `/issue`.
+- **Human in the loop** — every file write, command, commit, and issue creation
+  is previewed and confirmed (bypass with `--yes`).
+- **Interactive or one-shot** — a REPL, or a single request as an argument.
+
+## Requirements
+
+- Python 3.10+
+- Access to a LiteLLM proxy endpoint and a personal API key
+- (Optional) An on-prem GitLab instance + a personal access token (`api` scope)
 
 ## Install
-
-Requires Python 3.10+.
 
 ```bash
 cd aicoder
@@ -29,23 +40,28 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-Or, without installing the console script:
-
-```bash
-pip install -r requirements.txt
-python -m aicoder
-```
+Windows users: see the step-by-step
+**[WSL + PowerShell setup guide](docs/setup-wsl-powershell.md)**.
 
 ## Configure
 
-aicoder authenticates with the standard Anthropic environment variable:
+aicoder reads configuration from the environment (copy `.env.example` to `.env`
+as a reference):
 
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
+# LiteLLM (required)
+export LITELLM_BASE_URL="https://litellm.example.com"
+export LITELLM_API_KEY="sk-..."
+# export LITELLM_MODEL="gpt-4o"        # optional default model
+
+# GitLab (optional — only for issue commands/tools)
+export GITLAB_URL="https://gitlab.example.com"
+export GITLAB_TOKEN="glpat-..."
+# export GITLAB_PROJECT="group/project" # optional default project
 ```
 
-You can copy `.env.example` to `.env` as a reminder, then source it or export
-the value yourself. To change the model, set `AICODER_MODEL` or pass `--model`.
+`AICODER_*` and `OPENAI_*` are accepted as fallbacks for the LiteLLM base URL and
+key.
 
 ## Usage
 
@@ -56,69 +72,100 @@ aicoder
 ```
 
 ```
-you › add a --verbose flag to cli.py and wire it into logging
+you › explain what build.gradle does, then add a comment header to it
+you › /commit "document build.gradle"
 ```
 
-One-shot request:
+One-shot:
 
 ```bash
-aicoder "explain what build.gradle does in this repo"
-aicoder "write a failing test for the parse() function, then make it pass"
+aicoder "write a failing test for parse(), then make it pass"
+aicoder --model gpt-4o "summarize the open GitLab issues in group/project"
 ```
 
-Inside the REPL:
+### Slash commands
 
-- `/reset` — clear the conversation history
-- `/exit` (or `/quit`) — leave
+| Command | Description |
+| --- | --- |
+| `/models` | List models available on the LiteLLM proxy. |
+| `/model [name]` | Show or set the active model. |
+| `/commit <message>` | Commit tracked changes. |
+| `/issues [project]` | List open GitLab issues. |
+| `/issue <iid> [project]` | Show one GitLab issue. |
+| `/reset` | Clear the conversation history. |
+| `/help` | Show help. |
+| `/exit`, `/quit` | Leave. |
+
+Creating issues, staging specific files, running commands, and editing code are
+done by just asking (the assistant calls the matching tool and asks you to
+confirm).
 
 ### Options
 
 | Flag | Description |
 | --- | --- |
-| `--model MODEL` | Model id (default: `claude-opus-5`, or `$AICODER_MODEL`). |
+| `--model MODEL` | Active model id (default: `$LITELLM_MODEL`, else the first available). |
+| `--base-url URL` | LiteLLM base URL (default: `$LITELLM_BASE_URL`). |
 | `--max-tokens N` | Max output tokens per response (default: 16000). |
 | `--workdir DIR` | Directory to operate in (default: current directory). |
-| `-y`, `--yes` | Auto-approve file writes and shell commands. |
-| `--version` | Print the version and exit. |
+| `-y`, `--yes` | Auto-approve writes, commands, commits, and issue creation. |
+| `--version` | Print version and exit. |
 
 ## How it works
 
 ```
-your prompt ──▶ Claude (Messages API, streaming)
+your prompt ──▶ model (LiteLLM chat completions, streaming)
                    │
-                   ├─ text  ──────────────▶ streamed to your terminal
-                   └─ tool_use ──▶ aicoder runs the tool ──▶ tool_result ──┐
-                                   (write/run gated by a y/N prompt)       │
-                   ◀───────────────────────── loop until end_turn ────────┘
+                   ├─ text  ─────────────────▶ streamed to your terminal
+                   └─ tool_calls ──▶ aicoder runs each tool ──▶ results ──┐
+                                     (mutating tools gated by y/N)        │
+                   ◀──────────────── loop until the model is done ────────┘
 ```
 
-The whole loop is in `aicoder/agent.py`; the tools are in `aicoder/tools.py`.
-Adding a tool is a matter of writing a handler and appending one `Tool(...)`
-entry to the registry.
+Tools: filesystem (`read_file`, `write_file`, `str_replace`, `list_directory`,
+`search`), shell (`run_command`), git (`git_status/diff/log/add/commit`), and
+GitLab (`gitlab_list_issues/get_issue/create_issue`). Adding a tool is a handler
+plus one `Tool(...)` entry in `aicoder/tools.py`.
 
 ## Project layout
 
 ```
 aicoder/
-├── pyproject.toml        # packaging + `aicoder` console script
+├── pyproject.toml            # packaging + `aicoder` console script + pytest config
 ├── requirements.txt
 ├── .env.example
 ├── README.md
-└── aicoder/
-    ├── __init__.py
-    ├── __main__.py       # `python -m aicoder`
-    ├── cli.py            # argument parsing, REPL, one-shot mode
-    ├── config.py         # resolved runtime configuration
-    ├── agent.py          # the streaming agentic loop
-    ├── tools.py          # the tool registry and handlers
-    └── ui.py             # terminal presentation (rich, with a plain fallback)
+├── ROADMAP.md
+├── docs/
+│   └── setup-wsl-powershell.md
+├── aicoder/
+│   ├── __main__.py           # python -m aicoder
+│   ├── cli.py                # args, REPL, slash commands, one-shot
+│   ├── config.py             # env/flag configuration
+│   ├── llm.py                # LiteLLM (OpenAI-compatible) client + model listing
+│   ├── agent.py              # streaming agentic loop
+│   ├── tools.py              # tool registry + handlers
+│   ├── gitops.py             # local git wrappers
+│   ├── gitlab.py             # on-prem GitLab REST v4 client
+│   └── ui.py                 # terminal presentation (rich, with a plain fallback)
+└── tests/                    # pytest suite (no network required)
 ```
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+The tests mock the LiteLLM and GitLab HTTP calls, so the suite runs fully
+offline.
 
 ## Safety notes
 
-aicoder can modify files and run arbitrary shell commands in the working
-directory. By default it asks before every such action. `--yes` disables those
-prompts — only use it when you trust the request and have your work committed.
+aicoder can modify files, run arbitrary shell commands, commit code, and create
+GitLab issues. By default it asks before every such action. `--yes` disables
+those prompts — only use it when you trust the request and your work is committed.
 
 ## License
 

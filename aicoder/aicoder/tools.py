@@ -1,11 +1,13 @@
 """Tools the agent can call to inspect and change a codebase.
 
-Each tool is described to the model by an Anthropic tool schema and backed by a
-plain Python handler. Handlers return a string (the ``tool_result`` content) and
+Each tool is described to the model with an OpenAI function schema (LiteLLM is
+OpenAI-compatible) and backed by a plain Python handler. Handlers take the parsed
+argument dict and the run ``Config``, return a string (the tool result), and
 raise ``ToolError`` for expected, user-facing failures.
 
-Tools flagged ``mutating`` change the filesystem or run commands; the CLI gates
-those behind a confirmation prompt unless auto-approve is on.
+Tools flagged ``mutating`` change the filesystem, run commands, commit code, or
+create GitLab issues; the CLI gates those behind a confirmation prompt unless
+auto-approve is on.
 """
 
 from __future__ import annotations
@@ -14,6 +16,9 @@ import os
 import subprocess
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
+
+from aicoder import gitlab, gitops
+from aicoder.config import Config
 
 # Cap how much file/command output we feed back to the model in one result, so a
 # single huge file can't blow up the context window.
@@ -28,16 +33,19 @@ class ToolError(Exception):
 class Tool:
     name: str
     description: str
-    input_schema: Dict[str, Any]
-    handler: Callable[[Dict[str, Any], str], str]
+    parameters: Dict[str, Any]
+    handler: Callable[[Dict[str, Any], Config], str]
     mutating: bool = False
 
     def schema(self) -> Dict[str, Any]:
-        """The dict form the Messages API expects in ``tools=[...]``."""
+        """The OpenAI ``tools=[...]`` entry for this tool."""
         return {
-            "name": self.name,
-            "description": self.description,
-            "input_schema": self.input_schema,
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.parameters,
+            },
         }
 
 
@@ -48,18 +56,18 @@ def _truncate(text: str) -> str:
     return text[:MAX_OUTPUT_CHARS] + f"\n... [truncated {omitted} characters]"
 
 
-def _resolve(workdir: str, path: str) -> str:
+def _resolve(config: Config, path: str) -> str:
     """Resolve ``path`` against the working directory."""
     if os.path.isabs(path):
         return os.path.normpath(path)
-    return os.path.normpath(os.path.join(workdir, path))
+    return os.path.normpath(os.path.join(config.workdir, path))
 
 
-# --- Handlers ---------------------------------------------------------------
+# --- Filesystem handlers ----------------------------------------------------
 
 
-def _read_file(args: Dict[str, Any], workdir: str) -> str:
-    path = _resolve(workdir, args["path"])
+def _read_file(args: Dict[str, Any], config: Config) -> str:
+    path = _resolve(config, args["path"])
     if not os.path.isfile(path):
         raise ToolError(f"No such file: {args['path']}")
     try:
@@ -67,13 +75,11 @@ def _read_file(args: Dict[str, Any], workdir: str) -> str:
             content = f.read()
     except UnicodeDecodeError as exc:
         raise ToolError(f"Cannot read {args['path']} as UTF-8 text: {exc}")
-    if content == "":
-        return "(file is empty)"
-    return _truncate(content)
+    return content if content else "(file is empty)"
 
 
-def _write_file(args: Dict[str, Any], workdir: str) -> str:
-    path = _resolve(workdir, args["path"])
+def _write_file(args: Dict[str, Any], config: Config) -> str:
+    path = _resolve(config, args["path"])
     content = args["content"]
     parent = os.path.dirname(path)
     if parent:
@@ -86,8 +92,8 @@ def _write_file(args: Dict[str, Any], workdir: str) -> str:
     return f"{verb} {args['path']} ({lines} lines, {len(content)} bytes)."
 
 
-def _str_replace(args: Dict[str, Any], workdir: str) -> str:
-    path = _resolve(workdir, args["path"])
+def _str_replace(args: Dict[str, Any], config: Config) -> str:
+    path = _resolve(config, args["path"])
     if not os.path.isfile(path):
         raise ToolError(f"No such file: {args['path']}")
     old = args["old_str"]
@@ -110,23 +116,20 @@ def _str_replace(args: Dict[str, Any], workdir: str) -> str:
     return f"Edited {args['path']} (1 replacement)."
 
 
-def _list_directory(args: Dict[str, Any], workdir: str) -> str:
-    path = _resolve(workdir, args.get("path", "."))
+def _list_directory(args: Dict[str, Any], config: Config) -> str:
+    path = _resolve(config, args.get("path", "."))
     if not os.path.isdir(path):
         raise ToolError(f"No such directory: {args.get('path', '.')}")
     entries = sorted(os.listdir(path))
     if not entries:
         return "(empty directory)"
-    lines: List[str] = []
-    for name in entries:
-        full = os.path.join(path, name)
-        lines.append(f"{name}/" if os.path.isdir(full) else name)
+    lines = [f"{n}/" if os.path.isdir(os.path.join(path, n)) else n for n in entries]
     return _truncate("\n".join(lines))
 
 
-def _search(args: Dict[str, Any], workdir: str) -> str:
+def _search(args: Dict[str, Any], config: Config) -> str:
     pattern = args["pattern"]
-    root = _resolve(workdir, args.get("path", "."))
+    root = _resolve(config, args.get("path", "."))
     matches: List[str] = []
     skip_dirs = {".git", "__pycache__", "node_modules", ".venv", "venv", "build", "dist"}
     for dirpath, dirnames, filenames in os.walk(root):
@@ -137,7 +140,7 @@ def _search(args: Dict[str, Any], workdir: str) -> str:
                 with open(full, "r", encoding="utf-8") as f:
                     for lineno, line in enumerate(f, start=1):
                         if pattern in line:
-                            rel = os.path.relpath(full, workdir)
+                            rel = os.path.relpath(full, config.workdir)
                             matches.append(f"{rel}:{lineno}: {line.rstrip()}")
                             if len(matches) >= 200:
                                 matches.append("... [more matches omitted]")
@@ -149,13 +152,13 @@ def _search(args: Dict[str, Any], workdir: str) -> str:
     return _truncate("\n".join(matches))
 
 
-def _run_command(args: Dict[str, Any], workdir: str) -> str:
+def _run_command(args: Dict[str, Any], config: Config) -> str:
     command = args["command"]
     try:
         result = subprocess.run(
             command,
             shell=True,
-            cwd=workdir,
+            cwd=config.workdir,
             capture_output=True,
             text=True,
             timeout=args.get("timeout", 120),
@@ -170,13 +173,103 @@ def _run_command(args: Dict[str, Any], workdir: str) -> str:
     return _truncate("\n".join(parts))
 
 
+# --- Git handlers -----------------------------------------------------------
+
+
+def _git_status(args: Dict[str, Any], config: Config) -> str:
+    try:
+        return gitops.status(config)
+    except gitops.GitError as exc:
+        raise ToolError(str(exc))
+
+
+def _git_diff(args: Dict[str, Any], config: Config) -> str:
+    try:
+        return gitops.diff(config, staged=bool(args.get("staged", False)), path=args.get("path"))
+    except gitops.GitError as exc:
+        raise ToolError(str(exc))
+
+
+def _git_log(args: Dict[str, Any], config: Config) -> str:
+    try:
+        return gitops.log(config, count=int(args.get("count", 10)))
+    except gitops.GitError as exc:
+        raise ToolError(str(exc))
+
+
+def _git_add(args: Dict[str, Any], config: Config) -> str:
+    paths = args.get("paths")
+    if isinstance(paths, str):
+        paths = [paths]
+    try:
+        return gitops.add(config, paths or [])
+    except gitops.GitError as exc:
+        raise ToolError(str(exc))
+
+
+def _git_commit(args: Dict[str, Any], config: Config) -> str:
+    try:
+        return gitops.commit(config, args["message"], add_all=bool(args.get("all", False)))
+    except gitops.GitError as exc:
+        raise ToolError(str(exc))
+
+
+# --- GitLab handlers --------------------------------------------------------
+
+
+def _gitlab_list_issues(args: Dict[str, Any], config: Config) -> str:
+    try:
+        issues = gitlab.list_issues(
+            config,
+            project=args.get("project"),
+            state=args.get("state", "opened"),
+            search=args.get("search"),
+            limit=int(args.get("limit", 20)),
+        )
+    except gitlab.GitLabError as exc:
+        raise ToolError(str(exc))
+    if not issues:
+        return "(no matching issues)"
+    return "\n".join(gitlab.format_issue_short(i) for i in issues)
+
+
+def _gitlab_get_issue(args: Dict[str, Any], config: Config) -> str:
+    try:
+        issue = gitlab.get_issue(config, int(args["issue_iid"]), project=args.get("project"))
+    except gitlab.GitLabError as exc:
+        raise ToolError(str(exc))
+    return gitlab.format_issue_detail(issue)
+
+
+def _gitlab_create_issue(args: Dict[str, Any], config: Config) -> str:
+    labels = args.get("labels")
+    if isinstance(labels, str):
+        labels = [s.strip() for s in labels.split(",") if s.strip()]
+    try:
+        issue = gitlab.create_issue(
+            config,
+            title=args["title"],
+            description=args.get("description", ""),
+            project=args.get("project"),
+            labels=labels,
+        )
+    except gitlab.GitLabError as exc:
+        raise ToolError(str(exc))
+    return f"Created issue #{issue.get('iid')}: {issue.get('web_url', '')}"
+
+
 # --- Registry ---------------------------------------------------------------
+
+_PROJECT_PARAM = {
+    "type": "string",
+    "description": "GitLab project id or 'group/path'. Falls back to $GITLAB_PROJECT.",
+}
 
 TOOLS: List[Tool] = [
     Tool(
         name="read_file",
         description="Read the full contents of a text file, relative to the working directory.",
-        input_schema={
+        parameters={
             "type": "object",
             "properties": {"path": {"type": "string", "description": "Path to the file."}},
             "required": ["path"],
@@ -186,11 +279,9 @@ TOOLS: List[Tool] = [
     Tool(
         name="list_directory",
         description="List the entries of a directory. Directories are suffixed with '/'.",
-        input_schema={
+        parameters={
             "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "Directory path. Defaults to '.'."}
-            },
+            "properties": {"path": {"type": "string", "description": "Directory path. Defaults to '.'."}},
         },
         handler=_list_directory,
     ),
@@ -200,7 +291,7 @@ TOOLS: List[Tool] = [
             "Recursively search text files under a directory for a literal substring. "
             "Returns matching 'path:line: text' entries."
         ),
-        input_schema={
+        parameters={
             "type": "object",
             "properties": {
                 "pattern": {"type": "string", "description": "Literal substring to search for."},
@@ -216,7 +307,7 @@ TOOLS: List[Tool] = [
             "Create a new file or completely overwrite an existing one. Prefer str_replace "
             "for small edits to existing files."
         ),
-        input_schema={
+        parameters={
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "Path to the file."},
@@ -233,7 +324,7 @@ TOOLS: List[Tool] = [
             "Replace an exact, unique snippet in an existing file. old_str must match the "
             "file exactly (including whitespace) and appear exactly once."
         ),
-        input_schema={
+        parameters={
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "Path to the file."},
@@ -249,9 +340,9 @@ TOOLS: List[Tool] = [
         name="run_command",
         description=(
             "Run a shell command in the working directory and return its exit code, stdout, "
-            "and stderr. Use for builds, tests, linters, and git."
+            "and stderr. Use for builds, tests, and linters."
         ),
-        input_schema={
+        parameters={
             "type": "object",
             "properties": {
                 "command": {"type": "string", "description": "The shell command to run."},
@@ -260,6 +351,113 @@ TOOLS: List[Tool] = [
             "required": ["command"],
         },
         handler=_run_command,
+        mutating=True,
+    ),
+    # --- git ---
+    Tool(
+        name="git_status",
+        description="Show the working tree status (branch and changed files).",
+        parameters={"type": "object", "properties": {}},
+        handler=_git_status,
+    ),
+    Tool(
+        name="git_diff",
+        description="Show the git diff. Set staged=true for the staged diff; optionally limit to a path.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "staged": {"type": "boolean", "description": "Show the staged diff instead of unstaged."},
+                "path": {"type": "string", "description": "Limit the diff to this path."},
+            },
+        },
+        handler=_git_diff,
+    ),
+    Tool(
+        name="git_log",
+        description="Show recent commits (one line each).",
+        parameters={
+            "type": "object",
+            "properties": {"count": {"type": "integer", "description": "How many commits (default 10)."}},
+        },
+        handler=_git_log,
+    ),
+    Tool(
+        name="git_add",
+        description="Stage files for commit.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Paths to stage (use ['.'] for everything).",
+                }
+            },
+            "required": ["paths"],
+        },
+        handler=_git_add,
+        mutating=True,
+    ),
+    Tool(
+        name="git_commit",
+        description="Create a git commit with a message. Set all=true to stage tracked changes first.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "message": {"type": "string", "description": "The commit message."},
+                "all": {"type": "boolean", "description": "Stage all tracked changes first (git commit -a)."},
+            },
+            "required": ["message"],
+        },
+        handler=_git_commit,
+        mutating=True,
+    ),
+    # --- GitLab ---
+    Tool(
+        name="gitlab_list_issues",
+        description="List issues (tickets) in a GitLab project.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "project": _PROJECT_PARAM,
+                "state": {"type": "string", "enum": ["opened", "closed", "all"], "description": "Default opened."},
+                "search": {"type": "string", "description": "Filter issues by text."},
+                "limit": {"type": "integer", "description": "Max issues to return (default 20)."},
+            },
+        },
+        handler=_gitlab_list_issues,
+    ),
+    Tool(
+        name="gitlab_get_issue",
+        description="Get the details of one GitLab issue by its project-scoped iid.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "issue_iid": {"type": "integer", "description": "The issue's project-scoped id (iid)."},
+                "project": _PROJECT_PARAM,
+            },
+            "required": ["issue_iid"],
+        },
+        handler=_gitlab_get_issue,
+    ),
+    Tool(
+        name="gitlab_create_issue",
+        description="Create a new issue (ticket) in a GitLab project.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Issue title."},
+                "description": {"type": "string", "description": "Issue description (Markdown)."},
+                "project": _PROJECT_PARAM,
+                "labels": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional labels to apply.",
+                },
+            },
+            "required": ["title"],
+        },
+        handler=_gitlab_create_issue,
         mutating=True,
     ),
 ]
@@ -279,6 +477,18 @@ def describe_call(name: str, args: Dict[str, Any]) -> str:
     """A short one-line summary of a pending tool call, for the UI."""
     if name == "run_command":
         return f"$ {args.get('command', '')}"
+    if name == "git_commit":
+        return f"git commit -m {args.get('message', '')!r}"
+    if name == "git_add":
+        return f"git add {' '.join(args.get('paths', []) or [])}"
+    if name in ("git_status", "git_diff", "git_log"):
+        return name.replace("_", " ")
+    if name == "gitlab_create_issue":
+        return f"gitlab: create issue {args.get('title', '')!r}"
+    if name == "gitlab_list_issues":
+        return "gitlab: list issues"
+    if name == "gitlab_get_issue":
+        return f"gitlab: get issue #{args.get('issue_iid', '?')}"
     if name in ("read_file", "write_file", "str_replace"):
         return f"{name} {args.get('path', '')}"
     if name == "list_directory":
