@@ -37,6 +37,16 @@ Status legend: ✅ done · 🚧 in progress · ⬜ planned
 
 ## Next (v0.4 — parity basics)
 
+- ⬜ **Distribution & packaging**
+  - ⬜ **GitLab Package Registry publishing**: a `.gitlab-ci.yml` job that builds
+    the wheel and uploads it on a tag, so teams can `pip install dcs-code-cli`
+    from the internal index.
+  - ⬜ **Standalone binaries via CI**: PyInstaller build matrix (Linux/Windows,
+    and macOS if needed) producing a self-contained `dcs-code` executable for
+    users without Python.
+  - ⬜ **Internal naming consistency (optional)**: rename the `aicoder` package to
+    `dcs_code` and the `AICODER_*` env vars to `DCS_CODE_*` (keeping the old names
+    as deprecated aliases for one release).
 - ⬜ **Context management**: token accounting, auto-summarize/compact long histories
 - ⬜ **Better diffs**: unified-diff previews and a `apply_patch`-style multi-hunk edit tool
 - ⬜ **Project context file**: read an `AICODER.md` / `AGENTS.md` for repo conventions
