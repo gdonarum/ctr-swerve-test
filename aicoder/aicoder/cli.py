@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from aicoder import __version__, certs, gitlab, gitops, llm, session, ui
 from aicoder.agent import Agent, AgentError
-from aicoder.config import Config
+from aicoder.config import Config, load_dotenv
 
 HELP_TEXT = """\
 Commands:
@@ -51,6 +51,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Do not autosave the conversation for this directory.",
     )
     parser.add_argument("--base-url", help="LiteLLM base URL (default: $LITELLM_BASE_URL).")
+    parser.add_argument(
+        "--env-file", default=".env",
+        help="Path to a .env file to load (default: .env in the current directory).",
+    )
     parser.add_argument(
         "--ca-bundle",
         help="Path to a CA bundle/cert (e.g. your Zscaler root) for TLS verification.",
@@ -387,6 +391,13 @@ def _one_shot(agent: Agent, prompt: str) -> int:
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = _build_parser().parse_args(argv)
+
+    # Load a .env file if present, so copying .env.example to .env is enough —
+    # no need to `export` or `source` it. Real environment variables still win.
+    loaded = load_dotenv(args.env_file)
+    if not loaded and args.env_file != ".env":
+        ui.error(f"env file not found: {args.env_file}")
+        return 2
 
     config = Config.from_env(
         model=args.model,

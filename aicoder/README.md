@@ -86,6 +86,13 @@ export GITLAB_TOKEN="glpat-..."
 `AICODER_*` and `OPENAI_*` are accepted as fallbacks for the LiteLLM base URL and
 key.
 
+**`.env` is loaded automatically.** Copy `.env.example` to `.env`, fill it in,
+and run `dcs` from that directory — no need to `export` or `source` anything
+(real environment variables still take precedence). Point at a different file
+with `--env-file path/to/.env`. If you *do* prefer to source it, use
+`set -a; source .env; set +a` so the values are exported to the `dcs` process —
+a plain `source .env` sets shell variables that child processes don't inherit.
+
 ### Behind Zscaler (or another TLS-inspecting proxy)
 
 Zscaler re-signs HTTPS with a corporate root CA that Python doesn't trust by

@@ -34,6 +34,36 @@ def _env_truthy(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def load_dotenv(path: str = ".env", override: bool = False) -> bool:
+    """Load ``KEY=value`` pairs from a .env file into ``os.environ``.
+
+    A tiny, dependency-free dotenv loader so that copying ``.env.example`` to
+    ``.env`` is enough — no need to remember to ``export`` or ``source`` it.
+    Lines may start with ``export`` and values may be quoted. Existing
+    environment variables win unless ``override`` is True. Returns True if the
+    file existed and was read.
+    """
+    if not os.path.isfile(path):
+        return False
+    with open(path, "r", encoding="utf-8") as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):].lstrip()
+            key, sep, value = line.partition("=")
+            if not sep:
+                continue
+            key = key.strip()
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+                value = value[1:-1]
+            if override or key not in os.environ:
+                os.environ[key] = value
+    return True
+
+
 @dataclass
 class Config:
     """Resolved configuration for a single aicoder run."""
