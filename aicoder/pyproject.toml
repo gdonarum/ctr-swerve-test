@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aicoder"
+version = "0.1.0"
+description = "A small AI coding assistant for your terminal, powered by the Claude API."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "aicoder contributors" }]
+keywords = ["ai", "cli", "coding", "assistant", "claude", "anthropic"]
+dependencies = [
+    "anthropic>=0.40",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+aicoder = "aicoder.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["aicoder*"]
