@@ -23,6 +23,7 @@ dev = ["pytest>=7.0"]
 certs = ["truststore>=0.9"]
 
 [project.scripts]
+dcs-code = "aicoder.cli:main"
 dcs = "aicoder.cli:main"
 aicoder = "aicoder.cli:main"
 

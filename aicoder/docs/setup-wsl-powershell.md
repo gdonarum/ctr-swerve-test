@@ -1,6 +1,6 @@
 # Setting up DCS Code CLI on Windows: WSL (Linux) and PowerShell
 
-DCS Code CLI (command: `dcs`) is a Python CLI, so it runs anywhere Python 3.10+
+DCS Code CLI (command: `dcs-code`) is a Python CLI, so it runs anywhere Python 3.10+
 does. On Windows you
 have two good options:
 
@@ -68,7 +68,7 @@ export GITLAB_PROJECT="my-group/my-project"     # optional default project
 
 ```bash
 cd /path/to/your/project     # the repo you want to work on
-dcs
+dcs-code
 ```
 
 ### Notes for WSL
@@ -135,7 +135,7 @@ Close and reopen PowerShell after `setx` for the values to take effect.
 
 ```powershell
 cd C:\path\to\your\project
-dcs
+dcs-code
 ```
 
 ### Notes for PowerShell
@@ -162,13 +162,13 @@ trust store already. Let Python use it:
 ```bash
 pip install truststore
 export AICODER_SYSTEM_CERTS=1      # WSL/bash
-# or run:  dcs --system-certs
+# or run:  dcs-code --system-certs
 ```
 
 ```powershell
 pip install truststore
 $env:AICODER_SYSTEM_CERTS = "1"    # PowerShell
-# or run:  dcs --system-certs
+# or run:  dcs-code --system-certs
 ```
 
 This makes both the LiteLLM and GitLab connections trust whatever the OS trusts.
@@ -179,12 +179,12 @@ If you have (or can export) the Zscaler root certificate as a `.pem`:
 
 ```bash
 export AICODER_CA_BUNDLE=/etc/ssl/certs/zscaler-root.pem   # WSL/bash
-# or:  dcs --ca-bundle /etc/ssl/certs/zscaler-root.pem
+# or:  dcs-code --ca-bundle /etc/ssl/certs/zscaler-root.pem
 ```
 
 ```powershell
 $env:AICODER_CA_BUNDLE = "C:\certs\zscaler-root.pem"       # PowerShell
-# or:  dcs --ca-bundle C:\certs\zscaler-root.pem
+# or:  dcs-code --ca-bundle C:\certs\zscaler-root.pem
 ```
 
 `REQUESTS_CA_BUNDLE` and `SSL_CERT_FILE` are also honored as fallbacks, so if
@@ -220,8 +220,8 @@ usually provide the `.pem` directly.
 ## Verifying your setup
 
 ```bash
-dcs --version
-dcs                # then type:  /models
+dcs-code --version
+dcs-code                # then type:  /models
 ```
 
 `/models` should print the models your LiteLLM proxy exposes. If it errors:

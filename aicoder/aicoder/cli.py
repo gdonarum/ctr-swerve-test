@@ -35,7 +35,7 @@ use git, and manage GitLab issues and merge requests (with your confirmation).
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="dcs",
+        prog="dcs-code",
         description="DCS Code CLI — a terminal AI coding assistant powered by a LiteLLM proxy.",
     )
     parser.add_argument("prompt", nargs="*", help="A one-shot request. Omit for an interactive session.")

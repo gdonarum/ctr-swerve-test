@@ -18,9 +18,9 @@ It's intentionally small and readable, and it has an extensive test suite. See
 [`ROADMAP.md`](ROADMAP.md) for where it's headed (goal: match most of what
 Claude Code / OpenCode / Codex CLI do, on your own backend).
 
-> The command is `dcs` (with `aicoder` kept as an alias). The Python package is
-> `aicoder` and its env vars use the `LITELLM_*`, `GITLAB_*`, and `AICODER_*`
-> prefixes.
+> The command is `dcs-code` (with `dcs` and `aicoder` kept as aliases). The
+> Python package is `aicoder` and its env vars use the `LITELLM_*`, `GITLAB_*`,
+> and `AICODER_*` prefixes.
 
 ## Features
 
@@ -58,8 +58,8 @@ source .venv/bin/activate     # activate it  (Windows: .\.venv\Scripts\Activate.
 pip install -e .
 ```
 
-The `dcs` command is available **whenever that virtualenv is active**, so
-re-activate it in each new shell before running `dcs` (`source .venv/bin/activate`).
+The `dcs-code` command is available **whenever that virtualenv is active**, so
+re-activate it in each new shell before running `dcs-code` (`source .venv/bin/activate`).
 Prefer a globally-available command instead? Install with
 [pipx](https://pipx.pypa.io/): `pipx install .` from this directory.
 
@@ -85,17 +85,17 @@ export GITLAB_TOKEN="glpat-..."
 
 The GitLab **project** is resolved in this order: the value you pass to a
 command/tool → `$GITLAB_PROJECT` → the git `origin` remote of the directory you
-run `dcs` in. So inside a checked-out GitLab repo, `/issues` and "are there open
+run `dcs-code` in. So inside a checked-out GitLab repo, `/issues` and "are there open
 tickets for this project?" just work without configuring anything.
 
 `AICODER_*` and `OPENAI_*` are accepted as fallbacks for the LiteLLM base URL and
 key.
 
 **`.env` is loaded automatically.** Copy `.env.example` to `.env`, fill it in,
-and run `dcs` from that directory — no need to `export` or `source` anything
+and run `dcs-code` from that directory — no need to `export` or `source` anything
 (real environment variables still take precedence). Point at a different file
 with `--env-file path/to/.env`. If you *do* prefer to source it, use
-`set -a; source .env; set +a` so the values are exported to the `dcs` process —
+`set -a; source .env; set +a` so the values are exported to the `dcs-code` process —
 a plain `source .env` sets shell variables that child processes don't inherit.
 
 ### Behind Zscaler (or another TLS-inspecting proxy)
@@ -119,11 +119,11 @@ Zscaler cert on Windows/WSL.
 
 ## Usage
 
-Running `dcs` with no arguments starts an **interactive chat session** (the
+Running `dcs-code` with no arguments starts an **interactive chat session** (the
 default) — run it from the project you want to work on:
 
 ```bash
-dcs
+dcs-code
 ```
 
 ```
@@ -134,9 +134,9 @@ you › /commit "document build.gradle"
 One-shot (pass a prompt as an argument to run a single request and exit):
 
 ```bash
-dcs "write a failing test for parse(), then make it pass"
-dcs --model gpt-4o "summarize the open GitLab issues in group/project"
-dcs -c            # resume this directory's autosaved session
+dcs-code "write a failing test for parse(), then make it pass"
+dcs-code --model gpt-4o "summarize the open GitLab issues in group/project"
+dcs-code -c            # resume this directory's autosaved session
 ```
 
 ### Slash commands
@@ -182,7 +182,7 @@ Saved sessions live under `~/.aicoder/sessions` (override with
 ### Autosave
 
 Your conversation is autosaved per working directory after every turn and on
-exit, so you can pick up where you left off with `dcs -c` (or `/resume` inside a
+exit, so you can pick up where you left off with `dcs-code -c` (or `/resume` inside a
 session). Disable it with `--no-autosave` or `AICODER_NO_AUTOSAVE=1`.
 
 ## How it works
@@ -191,7 +191,7 @@ session). Disable it with `--no-autosave` or `AICODER_NO_AUTOSAVE=1`.
 your prompt ──▶ model (LiteLLM chat completions, streaming)
                    │
                    ├─ text  ─────────────────▶ streamed to your terminal
-                   └─ tool_calls ──▶ dcs runs each tool ──▶ results ──────┐
+                   └─ tool_calls ──▶ dcs-code runs each tool ──▶ results ──────┐
                                      (mutating tools gated by y/N)        │
                    ◀──────────────── loop until the model is done ────────┘
 ```
@@ -206,7 +206,7 @@ tool is a handler plus one `Tool(...)` entry in `aicoder/tools.py`.
 
 ```
 aicoder/
-├── pyproject.toml            # packaging + `dcs`/`aicoder` console scripts + pytest config
+├── pyproject.toml            # packaging + `dcs-code` console script (+ `dcs`/`aicoder` aliases)
 ├── requirements.txt
 ├── .env.example
 ├── README.md
@@ -237,6 +237,58 @@ pytest
 
 The tests mock the LiteLLM and GitLab HTTP calls, so the suite runs fully
 offline.
+
+## Building & distributing
+
+DCS Code CLI is a standard Python package (`dcs-code-cli`), so you build it once
+and hand others a wheel — they don't need this source tree.
+
+**1. Build the artifacts** (a wheel + source archive into `dist/`):
+
+```bash
+pip install build
+python -m build
+# -> dist/dcs_code_cli-<version>-py3-none-any.whl
+#    dist/dcs_code_cli-<version>.tar.gz
+```
+
+**2. Others install it.** Share the `.whl` (email, shared drive, GitLab release
+asset) and they install into their own environment:
+
+```bash
+pipx install dcs_code_cli-0.3.0-py3-none-any.whl   # recommended: isolated, on PATH
+# or:  pip install dcs_code_cli-0.3.0-py3-none-any.whl
+```
+
+That puts the `dcs-code` command on their PATH. They still set their own
+`LITELLM_*` / `GITLAB_*` environment (each user has their own keys).
+
+**3. Or publish to an internal index** so people can `pip install dcs-code-cli`
+by name. For a GitLab Package Registry (PyPI-style):
+
+```bash
+pip install twine
+TWINE_PASSWORD=<token> TWINE_USERNAME=<user> \
+  twine upload --repository-url https://gitlab.example.com/api/v4/projects/<id>/packages/pypi dist/*
+```
+
+Consumers then point pip at that index (`pip install --index-url … dcs-code-cli`)
+or add it to their `pip.conf`.
+
+**Standalone binary (no Python required).** If some users don't have Python,
+bundle a single executable with [PyInstaller](https://pyinstaller.org/) or
+[shiv](https://shiv.readthedocs.io/):
+
+```bash
+pip install pyinstaller
+pyinstaller --onefile --name dcs-code -c aicoder/__main__.py
+# -> dist/dcs-code  (a self-contained executable for THIS OS/arch)
+```
+
+Build the binary on each target OS (Linux/macOS/Windows) you need to support.
+
+To cut a new version, bump `version` in `pyproject.toml` and `__version__` in
+`aicoder/__init__.py`, then rebuild.
 
 ## Approvals
 
