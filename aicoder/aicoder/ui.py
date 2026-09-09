@@ -39,16 +39,19 @@ _SPLASH_ART = r"""
 """
 
 
+TAGLINE = "Brought to you by the AI for Software Engineers Working Group"
+
+
 def splash() -> None:
     """Print the DCS Code CLI splash screen."""
     if _console:
         _console.print(Text(_SPLASH_ART.strip("\n"), style="bold cyan"))
-        _console.print(
-            Text.assemble((APP_NAME, "bold cyan"), ("  your terminal coding assistant", "dim"))
-        )
+        _console.print(Text(APP_NAME, style="bold cyan"))
+        _console.print(Text(TAGLINE, style="dim"))
     else:
         _plain(_SPLASH_ART.strip("\n"))
-        _plain(f"{APP_NAME} — your terminal coding assistant")
+        _plain(APP_NAME)
+        _plain(TAGLINE)
 
 
 def banner(model: str, workdir: str, hint: str = "") -> None:
@@ -123,12 +126,33 @@ def diff_preview(title: str, body: str, language: str = "text") -> None:
         _plain(body)
 
 
-def confirm(question: str) -> bool:
+def _ask(question: str, hint: str) -> str:
     if _console:
-        answer = _console.input(f"[yellow]{question}[/] [dim](y/N)[/] ").strip().lower()
-    else:
-        answer = input(f"{question} (y/N) ").strip().lower()
+        return _console.input(f"[yellow]{question}[/] [dim]{hint}[/] ").strip().lower()
+    return input(f"{question} {hint} ").strip().lower()
+
+
+def confirm(question: str, default: bool = True) -> bool:
+    """A yes/no prompt. Enter accepts the default (Yes unless default=False)."""
+    hint = "[Y/n]" if default else "[y/N]"
+    answer = _ask(question, hint)
+    if not answer:
+        return default
     return answer in ("y", "yes")
+
+
+def approve(question: str) -> str:
+    """A three-way approval prompt. Returns 'yes', 'no', or 'always'.
+
+    Enter defaults to yes; 'a'/'always' approves this action type for the rest
+    of the session.
+    """
+    answer = _ask(question, "[Y/n/a]")
+    if not answer or answer in ("y", "yes"):
+        return "yes"
+    if answer in ("a", "always", "all"):
+        return "always"
+    return "no"
 
 
 def info(message: str) -> None:

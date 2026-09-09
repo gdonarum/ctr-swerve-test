@@ -233,11 +233,24 @@ pytest
 The tests mock the LiteLLM and GitLab HTTP calls, so the suite runs fully
 offline.
 
+## Approvals
+
+Every mutating action (file writes, edits, shell commands, commits, issue/MR
+creation) is previewed and confirmed with a `[Y/n/a]` prompt:
+
+- **Enter or `y`** — approve this one (Yes is the default).
+- **`n`** — decline.
+- **`a`** — approve **and stop asking** for that action type for the rest of the
+  session (answer `a` once to a file write and further writes won't prompt).
+
+Prefer no prompts at all? Start with `-y` / `--yes` to auto-approve everything —
+only when you trust the request and your work is committed.
+
 ## Safety notes
 
-DCS Code CLI can modify files, run arbitrary shell commands, commit code, and create
-GitLab issues. By default it asks before every such action. `--yes` disables
-those prompts — only use it when you trust the request and your work is committed.
+DCS Code CLI can modify files, run arbitrary shell commands, commit code, and
+create GitLab issues/MRs. It asks before every such action by default; `a`
+(sticky) and `--yes` relax that at your discretion.
 
 ## License
 

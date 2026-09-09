@@ -167,3 +167,51 @@ def test_splash_and_banner_do_not_crash():
     ui = __import__("aicoder.ui", fromlist=["ui"])
     ui.splash()
     ui.banner("m", "/w", hint="hi")
+
+
+def _write_tool():
+    from aicoder import tools
+    return tools.get_tool("write_file")
+
+
+def test_approver_default_yes(monkeypatch):
+    from aicoder import ui
+    monkeypatch.setattr(ui, "diff_preview", lambda *a, **k: None)
+    monkeypatch.setattr(ui, "approve", lambda q: "yes")
+    approver = cli._make_approver(Config())
+    assert approver(_write_tool(), {"path": "a", "content": "x"}) is True
+
+
+def test_approver_no(monkeypatch):
+    from aicoder import ui
+    monkeypatch.setattr(ui, "diff_preview", lambda *a, **k: None)
+    monkeypatch.setattr(ui, "approve", lambda q: "no")
+    approver = cli._make_approver(Config())
+    assert approver(_write_tool(), {"path": "a", "content": "x"}) is False
+
+
+def test_approver_always_is_sticky(monkeypatch):
+    from aicoder import ui
+    prompts = []
+    monkeypatch.setattr(ui, "diff_preview", lambda *a, **k: None)
+    monkeypatch.setattr(ui, "info", lambda *a, **k: None)
+    monkeypatch.setattr(ui, "approve", lambda q: prompts.append(q) or "always")
+    approver = cli._make_approver(Config())
+    tool = _write_tool()
+    assert approver(tool, {"path": "a", "content": "1"}) is True
+    assert approver(tool, {"path": "b", "content": "2"}) is True
+    # only prompted once; the second call was auto-approved
+    assert len(prompts) == 1
+
+
+def test_approver_always_is_per_tool(monkeypatch):
+    from aicoder import tools, ui
+    monkeypatch.setattr(ui, "diff_preview", lambda *a, **k: None)
+    monkeypatch.setattr(ui, "info", lambda *a, **k: None)
+    seen = []
+    monkeypatch.setattr(ui, "approve", lambda q: seen.append(q) or "always")
+    approver = cli._make_approver(Config())
+    approver(tools.get_tool("write_file"), {"path": "a", "content": "1"})
+    # a different tool still prompts (stickiness is per tool type)
+    approver(tools.get_tool("run_command"), {"command": "ls"})
+    assert len(seen) == 2

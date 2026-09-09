@@ -75,38 +75,58 @@ def _build_parser() -> argparse.ArgumentParser:
 # --- approval preview -------------------------------------------------------
 
 
+def _preview_and_question(tool, args: Dict[str, Any]) -> str:
+    """Render the pending action and return the approval question."""
+    if tool.name == "write_file":
+        content = args.get("content", "")
+        preview = content if len(content) <= 2000 else content[:2000] + "\n… [truncated]"
+        ui.diff_preview(f"write_file → {args.get('path', '')}", preview, _language_for(args.get("path", "")))
+        return "Write this file?"
+    if tool.name == "str_replace":
+        body = f"- {args.get('old_str', '')}\n+ {args.get('new_str', '')}"
+        ui.diff_preview(f"str_replace → {args.get('path', '')}", body)
+        return "Apply this edit?"
+    if tool.name == "run_command":
+        ui.diff_preview("run_command", f"$ {args.get('command', '')}", "bash")
+        return "Run this command?"
+    if tool.name == "git_commit":
+        ui.diff_preview("git commit", args.get("message", ""), "text")
+        return "Create this commit?"
+    if tool.name == "git_add":
+        ui.diff_preview("git add", " ".join(args.get("paths", []) or []), "text")
+        return "Stage these paths?"
+    if tool.name == "gitlab_create_issue":
+        body = f"title: {args.get('title', '')}\n\n{args.get('description', '')}"
+        ui.diff_preview("gitlab: create issue", body, "markdown")
+        return "Create this issue?"
+    if tool.name == "gitlab_create_merge_request":
+        body = (
+            f"{args.get('source_branch', '')} → {args.get('target_branch', '')}\n"
+            f"title: {args.get('title', '')}\n\n{args.get('description', '')}"
+        )
+        ui.diff_preview("gitlab: create merge request", body, "markdown")
+        return "Create this merge request?"
+    return f"Run {tool.name}?"
+
+
 def _make_approver(config: Config):
+    """An approver that previews each mutating action and asks Y/n/a.
+
+    Enter/Y approves once; 'a' approves that tool for the rest of the session
+    (sticky) so you aren't re-prompted for every edit.
+    """
+    always_approved: set = set()
+
     def approver(tool, args: Dict[str, Any]) -> bool:
-        if tool.name == "write_file":
-            content = args.get("content", "")
-            preview = content if len(content) <= 2000 else content[:2000] + "\n… [truncated]"
-            ui.diff_preview(f"write_file → {args.get('path', '')}", preview, _language_for(args.get("path", "")))
-            return ui.confirm("Write this file?")
-        if tool.name == "str_replace":
-            body = f"- {args.get('old_str', '')}\n+ {args.get('new_str', '')}"
-            ui.diff_preview(f"str_replace → {args.get('path', '')}", body)
-            return ui.confirm("Apply this edit?")
-        if tool.name == "run_command":
-            ui.diff_preview("run_command", f"$ {args.get('command', '')}", "bash")
-            return ui.confirm("Run this command?")
-        if tool.name == "git_commit":
-            ui.diff_preview("git commit", args.get("message", ""), "text")
-            return ui.confirm("Create this commit?")
-        if tool.name == "git_add":
-            ui.diff_preview("git add", " ".join(args.get("paths", []) or []), "text")
-            return ui.confirm("Stage these paths?")
-        if tool.name == "gitlab_create_issue":
-            body = f"title: {args.get('title', '')}\n\n{args.get('description', '')}"
-            ui.diff_preview("gitlab: create issue", body, "markdown")
-            return ui.confirm("Create this issue?")
-        if tool.name == "gitlab_create_merge_request":
-            body = (
-                f"{args.get('source_branch', '')} → {args.get('target_branch', '')}\n"
-                f"title: {args.get('title', '')}\n\n{args.get('description', '')}"
-            )
-            ui.diff_preview("gitlab: create merge request", body, "markdown")
-            return ui.confirm("Create this merge request?")
-        return ui.confirm(f"Run {tool.name}?")
+        if tool.name in always_approved:
+            return True
+        question = _preview_and_question(tool, args)
+        choice = ui.approve(question)
+        if choice == "always":
+            always_approved.add(tool.name)
+            ui.info(f"OK — won't ask again for {tool.name} this session.")
+            return True
+        return choice == "yes"
 
     return approver
 
